@@ -7,25 +7,36 @@ DIST_BUILD = dist/build/${DIST_ARCHIVE}
 
 BUILD_MACHINE = tjbot-ibm.capnajax.net
 BUILD_USERNAME = pi
-BUILD_MACHINE_DIR = ~/Documents/ino/
+BUILD_MACHINE_DIR = ~pi/Documents/ino/
 
 TAR_UPLOAD = ${PROJECT_NAME}.tar
 
-
+SSH = ssh ${BUILD_MACHINE} -l ${BUILD_USERNAME}
 
 clean:
 	rm -rf build
 
+pi-node-install: pi-node
+	${SSH} 'cd ${BUILD_MACHINE_DIR}${PROJECT_NAME}/node ; npm install'
+
+pi-node: pi-upload
+
+pi-arduino: pi-upload
+	${SSH} ls ${BUILD_MACHINE_DIR}${PROJECT_NAME}/ino/adapter
+	${SSH} arduino --verify ${BUILD_MACHINE_DIR}${PROJECT_NAME}/ino/adapter/adapter.ino
+	${SSH} arduino --upload ${BUILD_MACHINE_DIR}${PROJECT_NAME}/ino/adapter/adapter.ino
+
 pi-upload: tar
-	ssh ${BUILD_MACHINE} -l ${BUILD_USERNAME} 'mkdir -p ${BUILD_MACHINE_DIR}'
+	${SSH} 'mkdir -p ${BUILD_MACHINE_DIR}'
 	scp -r build/${TAR_UPLOAD} ${BUILD_USERNAME}@${BUILD_MACHINE}:${BUILD_MACHINE_DIR}
-	ssh ${BUILD_MACHINE} -l ${BUILD_USERNAME} 'tar xvf ${BUILD_MACHINE_DIR}/${PROJECT_NAME}.tar'
+	${SSH} 'cd ${BUILD_MACHINE_DIR} ; tar xvf ${BUILD_MACHINE_DIR}/${PROJECT_NAME}.tar'
 
 tar: build/${TAR_UPLOAD}
 
 build/${TAR_UPLOAD}: build 
 	mkdir -p build/${PROJECT_NAME}
-	cp -R ino build/${PROJECT_NAME}
+	tar cf - --exclude node_modules node | (cd build/${PROJECT_NAME} ; tar xf -)
+	cp -R ino build/${PROJECT_NAME} 
 	cd build; tar cf ${TAR_UPLOAD} ${PROJECT_NAME}
 
 build:

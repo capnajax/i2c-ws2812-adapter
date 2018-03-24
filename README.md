@@ -11,3 +11,51 @@ The limiting factor on the number of LEDs I can control is the memory onboard. E
 
 
 
+# Interface
+
+The I²C interface messages, as sent to the adapter have one byte for a command number, which cycles every 256 commands, next for a command type, then the rest of the bytes are for parameters. The names provided are for information only.
+
+- [0x01 syn](#syn)
+- [0x02 setPixelCt](#setpixelct)
+- [0x10 flash](#flash)
+- [0x11 flashRegion](#flashregion)
+- [0x1F resume](#resume)
+- [0x20 setPixelColor](#setpixelcolor)
+- [0x21 setPixelsColor](#setpixelscolor)
+- [0x7F send](#send)
+
+### syn
+
+Essentially a ping -- requests an ACK. No parameters. The adapter will send a response back to the I²C master with 0x02 and the command number.
+
+### setPixelCt
+
+Sets the number of pixels. The parameters are one or two bytes, depending on the pixel count `n`:
+| Pixel Ct | Bytes | Notes |
+|---|---|---|
+| n < 128 | 1 | Sole byte is the number of pixels |
+| 128 ≤ n < 32768 | 2 | Add 0x8000 to the number of pixels (i.e. set the first bit to 1) | 
+
+If there are too many for the chip to handle (limits TBD), it will return an error that includes the limit expressed as a big-end word.
+	```0x81 [cmd] [max MSB] [max LSB]```
+
+### flash
+
+Cause all the pixels to set to the same colour without losing the buffer. Can restore the buffer with a `resume`, and `flashRegion` will set pixels not in that region back to their original buffered colour.
+
+### flashRegion
+
+Future feature, uncertain feasibility.
+
+Cause a portion of the LEDs to flash a certain colour. Resets to original colour on `resume` or  another `flash`.
+
+### resume
+
+Returns all pixels to their buffered colour. No parameters necessary.
+
+### setPixelColor
+### setPixelsColor
+### send
+
+
+
