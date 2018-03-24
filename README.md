@@ -32,7 +32,7 @@ Essentially a ping -- requests an ACK. No parameters. The adapter will send a re
 
 Sets the number of pixels. The parameters are one or two bytes, depending on the pixel count `n`:
 | Pixel Ct | Bytes | Notes |
-|---|---|---|
+| --- | --- | --- |
 | n < 128 | 1 | Sole byte is the number of pixels |
 | 128 ≤ n < 32768 | 2 | Add 0x8000 to the number of pixels (i.e. set the first bit to 1) | 
 
