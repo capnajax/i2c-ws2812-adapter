@@ -31,6 +31,7 @@ Essentially a ping -- requests an ACK. No parameters. The adapter will send a re
 ### setPixelCt
 
 Sets the number of pixels. The parameters are one or two bytes, depending on the pixel count `n`:
+
 | Pixel Ct | Bytes | Notes |
 | --- | --- | --- |
 | n < 128 | 1 | Sole byte is the number of pixels |
