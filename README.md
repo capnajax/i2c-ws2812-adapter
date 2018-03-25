@@ -20,9 +20,12 @@ The I²C interface messages, as sent to the adapter have one byte for a command 
 - [0x10 flash](#flash)
 - [0x11 flashRegion](#flashregion)
 - [0x1F resume](#resume)
-- [0x20 setPixelColor](#setpixelcolor)
-- [0x21 setPixelsColor](#setpixelscolor)
+- [0x20 setPixelColor](#setpixelcolor) - set a single pixel
+- [0x21 setPixelRange](#setpixelscolor) - set a range of pixels to a single colour
+- [0x22 setPixelBuf](#setpixelscolors) - set a range of pixels to a buffer
+- [0x7E dumpBuffer](#dumpbuffer)
 - [0x7F send](#send)
+
 
 ### syn
 
@@ -33,11 +36,12 @@ Essentially a ping -- requests an ACK. No parameters. The adapter will send a re
 Sets the number of pixels. The parameters are one or two bytes, depending on the pixel count `n`:
 
 | Pixel Ct | Bytes | Notes |
-| --- | --- | --- |
-| n < 128 | 1 | Sole byte is the number of pixels |
-| 128 ≤ n < 32768 | 2 | Add 0x8000 to the number of pixels (i.e. set the first bit to 1) | 
+|:---:|:---:| --- |
+| `n` < 128 | 1 | Sole byte is the number of pixels |
+| 128 ≤ `n` < 32768 | 2 | Add `0x8000` to the number of pixels (i.e. set the first bit to 1) | 
 
 If there are too many for the chip to handle (limits TBD), it will return an error that includes the limit expressed as a big-end word.
+
 	```0x81 [cmd] [max MSB] [max LSB]```
 
 ### flash
@@ -55,8 +59,32 @@ Cause a portion of the LEDs to flash a certain colour. Resets to original colour
 Returns all pixels to their buffered colour. No parameters necessary.
 
 ### setPixelColor
+
+Sets a single pixel to a specific colour. The pixel number can be one (for < 128) or two (set first bit to 1) bytes. 
+
+```[0x20] [cmd] [pixel] [color]```
+
 ### setPixelsColor
+
+Sets a range of pixels to a specific color. The pixel numbers can be one or two bytes.
+
+```[0x21] [cmd] [pixel 1] [pixel n] [color]```
+
+### setPixelsColors
+
+Sets a range of pixels to buffered colours.
+
+```[0x22] [cmd] [pixel 1] [pixel n] [color 1] [color 2] ... [color n]```
+
+### dumpBuffer
+
+Sends the pixels buffer back through the I²C bus.
+
 ### send
 
+Sends the buffer to the pixels. This is a blocking operation and I²C commands will be lost during this process. This sends an ACK back when the `send` is complete.
 
+# Links
+
+- [i2c-bus](https://github.com/fivdi/i2c-bus)
 
