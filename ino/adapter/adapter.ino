@@ -23,6 +23,9 @@ uint8_t responseQueue[RESPONSE_QUEUE_LENGTH];
 uint8_t responseQueueReadOffset=0;
 uint8_t responseQueueWriteOffset=0;
 
+uint16_t dumpCursor=0;
+uint16_t dumpStop=0;
+
 uint16_t i = 0;
 uint16_t pixelCt = 1;
 
@@ -67,7 +70,13 @@ void ack(uint8_t cmdNum) {
 }
 
 void i2cResponder() {
-	// for the most part, we're going to assume each command is two bytes
+	// for the most part, we're going to assume each response is two bytes, 
+	// because it's usually and ACK and a command number, so the master
+	// should know to request two bytes at a time, unless the previous
+	// request is asking for a dump.
+
+
+
 }
 
 void i2cCmdHandler(int numBytes) {
