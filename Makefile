@@ -13,18 +13,22 @@ TAR_UPLOAD = ${PROJECT_NAME}.tar
 
 SSH = ssh ${BUILD_MACHINE} -l ${BUILD_USERNAME}
 
+all: pi-node pi-arduino
+
 clean:
 	rm -rf build
 
-pi-node-install: pi-node
-	${SSH} 'cd ${BUILD_MACHINE_DIR}${PROJECT_NAME}/node ; npm install'
+test:
+	${SSH} 'cd ${BUILD_MACHINE_DIR}${PROJECT_NAME}/node ; npm test'
 
 pi-node: pi-upload
+	${SSH} 'cd ${BUILD_MACHINE_DIR}${PROJECT_NAME}/node ; npm install'
 
 pi-arduino: pi-upload
-	${SSH} ls ${BUILD_MACHINE_DIR}${PROJECT_NAME}/ino/adapter
-	${SSH} arduino --verify ${BUILD_MACHINE_DIR}${PROJECT_NAME}/ino/adapter/adapter.ino
 	${SSH} arduino --upload ${BUILD_MACHINE_DIR}${PROJECT_NAME}/ino/adapter/adapter.ino
+
+pi-verify: pi-upload
+	${SSH} arduino --verify ${BUILD_MACHINE_DIR}${PROJECT_NAME}/ino/adapter/adapter.ino
 
 pi-upload: tar
 	${SSH} 'mkdir -p ${BUILD_MACHINE_DIR}'

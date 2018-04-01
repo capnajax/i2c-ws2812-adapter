@@ -35,8 +35,10 @@ The first two-byte response is always a code followed by a command number. The c
 
 ### Initial two-byte response:
 
+- [0x00 empty](#empty)
 - [0x01 ack](#ack)
-- [0x41 errDumpInProgress](#errDumpInProgress)
+- [0x31 errBadCommand](#errbadcommand)
+- [0x41 errDumpInProgress](#errdumpinprogress)
 - [0x7D,0x7E bufferDump](#bufferdump)
 
 ## Command Details
@@ -104,9 +106,21 @@ Sends the buffer to the pixels. This is a blocking operation and i²c commands w
 
 ## Request Response details
 
+### empty
+
+This responds with 0x00 as the first byte, and 0xFF as the second. No follow-on response is necessary.
+
+This indicates that there is nothing to send.
+
 ### ack
 
 This responds with 0x01 as the first byte, and a command number as the second byte. No follow-on response is necessary.
+
+### errBadCommand
+
+This responds with 0x41 as the first byte, and a command number as the second byte. No follow-on response is necessary.
+
+This indicates a command was sent that this device does not understand. Note that bad commands are not guaranteed a response.
 
 ### errDumpInProgress
 
