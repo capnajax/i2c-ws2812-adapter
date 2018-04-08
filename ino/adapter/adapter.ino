@@ -1,5 +1,6 @@
 
 #include <Wire.h>
+//#include <Adafruit_NeoPixel.h>
 
 #define I2C_CHANNEL 0x0B
 
@@ -17,6 +18,8 @@
 
 #define RSP_ACK			((uint8_t)0x01)
 #define RSP_ERR_BAD_CMD	((uint8_t)0x31)
+#define RSP_OUT_OF_RNG	((uint8_t)0x32)
+#define RSP_NEGV_RNG	((uint8_t)0x33)
 #define RSP_ERR_DUMP_ALREADY_QUEUED	((uint8_t)0x41)
 #define RSP_DUMP_RNG_8	((uint8_t)0x7D)
 #define RSP_DUMP_RNG_16	((uint8_t)0x7E)
@@ -84,6 +87,14 @@ inline void ack(uint8_t cmdNum) {
 
 inline void rejectBadCmd(uint8_t cmdNum) {
 	uint8_t response[] = {RSP_ERR_BAD_CMD, cmdNum};
+	queueResponse(2, response);
+}
+inline void rejectOutOfRange(uint8_t cmdNum) {
+	uint8_t response[] = {RSP_OUT_OF_RNG, cmdNum};
+	queueResponse(2, response);
+}
+inline void rejectNegativeRange(uint8_t cmdNum) {
+	uint8_t response[] = {RSP_NEGV_RNG, cmdNum};
 	queueResponse(2, response);
 }
 
@@ -216,7 +227,14 @@ void i2cCmdHandler(int numBytes) {
 				// number is u16[0]|0x7ffff -- converted to little-end
 				u8[2] = (uint8_t)(u16[0]|0x00ff);
 				u8[3] = (uint8_t)(u8[0]|0x7F);
-				pixelCt=u16[1];
+
+				if (u16[1] * pixelBytes > MAX_PIXEL_BUF) {
+					// too long
+					rejectOutOfRange(cmdNum);
+				} else {
+					pixelCt=u16[1];
+					ack(cmdNum);
+				}
 			} else {
 				rejectBadCmd(cmdNum);
 				break;
@@ -300,6 +318,7 @@ void i2cCmdHandler(int numBytes) {
 		case CMD_SEND:
 			break;
 		default:
+			rejectBadCmd(cmdNum);
 			break;
 		}
 

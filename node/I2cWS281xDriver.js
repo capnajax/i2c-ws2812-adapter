@@ -2,6 +2,7 @@
 const
 	debug = require('debug')('I2cWS281xDriver'),
 	i2c = require('i2c-bus'),
+	statusCodes = require('web-status-codes'),
 	_ = require('lodash'),
 
 	SLAVE_ADDR = 0x0B,
@@ -21,6 +22,8 @@ const
 
 	RSP_ACK			= 0x01,
 	RSP_ERR_BAD_CMD	= 0x31,
+	RSP_OUT_OF_RNG	= 0x32,
+	RSP_NEGV_RNG	= 0x33,
 	RSP_ERR_DUMP_ALREADY_QUEUED	= 0x41,
 	RSP_DUMP_RNG_8	= 0x7D,
 	RSP_DUMP_RNG_16	= 0x7E,
@@ -30,16 +33,22 @@ const
 	// frequency to poll for a response
 	RESPONSE_POLL	= 25;
 
+var expectingResponseSince = 0;
+
 
 /**
  *	Returns callback that resolves a promise but doesn't receive any data.
  */
 var emptyCallback = (resolve, reject) => {
 	return (err, data) => {
+
+		debug(`[emptyCallback] start err = ${err}`);
+		debug(`[emptyCallback] start data = ${data}`);
+
 		if (err) {
-			reject(err);
+			reject && reject(err);
 		} else {
-			resolve();			
+			resolve && resolve(data);			
 		}
 	}
 };
@@ -83,12 +92,12 @@ I2cWS281xDriver.prototype.requestData = function(channel, slave, length) {
 
 		Promise.resolve()
 		.then(() => { return new Promise((res, rej) => {
-				debug('openning channel');
+				debug('[requestData] openning channel');
 				this.bus = i2c.open(channel, (err) => {err ? rej(err) : res()});
-				debug('openned channel');
+				debug('[requestData] openned channel');
 			})})
 		.then(() => { return new Promise((res, rej) => {				
-				debug(`buf.i2cRead(${slave}, ${length}, cb)`)
+				debug(`[requestData] buf.i2cRead(${slave}, ${length}, cb)`)
 				this.bus.i2cRead(slave, length, Buffer.alloc(length), (err, bytesRead, buffer) => {
 
 						debug('[requestData] err ==', err);
@@ -101,69 +110,102 @@ I2cWS281xDriver.prototype.requestData = function(channel, slave, length) {
 							res({bytesRead: bytesRead, buffer: buffer});
 						}
 					});
-				debug('read ok');
+				debug('[requestData] read ok');
 			})})
 		.then((response) => { return new Promise((res, rej) => {
-				debug('closing');
+				debug('[requestData] closing');
 				this.bus.close((err) => {err ? rej(err) : res(response)});
-				debug('closed');
+				debug('[requestData] closed');
 			})})
 		.then((response) => { resolve(response); })
 		.catch((reason) => { reject(reason); })
 	});
 };
 
+/**
+ *	Requests a response from the i2c device. Responses are always to existing
+ *	commands, each command has a callback in a queue so this method responds
+ *	to those callbacks as well in the promise response.
+ */
 I2cWS281xDriver.prototype.pullResponse = function() {
  
-	var self = this;
+	debug("[pullResponse] called");
 
-	return new Promise((resolve, reject) => {
+	var self = this,
+		cb = null,
+		responseType, 
+		cmdNum;
 
-		var responseType, cmdNum;
+	self.requestData(I2C_CHANNEL, SLAVE_ADDR, 2)
+	.then((response) => { return new Promise((res, rej) => {
 
-		self.requestData(I2C_CHANNEL, SLAVE_ADDR, 2)
-		.then((response) => { return new Promise((res, rej) => {
+			debug('[pullResponse] bytesRead ==', response.bytesRead);
+			debug('[pullResponse] buffer ==', response.buffer);
 
-				var cb;
+			var responseObj = (cmdNum, status) => {
+					var statusInfo = statusCodes.getStatusDetails(status);
+						result = {
+						commandNum: cmdNum,
+						status: {
+							code: status,
+							series: statusInfo.series,
+							message: statusInfo.text,
+							isOk: ( statusInfo.series.startsWith(statusCodes.SUCCESS) )
+						}
+					};
+					return result;
+				};
 
-				debug('[pullResponse] bytesRead ==', response.bytesRead);
-				debug('[pullResponse] buffer ==', response.buffer);
+			if (response.bytesRead == 2) {
+				// what I expected. Let's parse it.
+				responseType = response.buffer.readUInt8(0);
+				cmdNum = response.buffer.readUInt8(1);
 
-				if (response.bytesRead == 2) {
-					// what I expected. Let's parse it.
-					responseType = response.buffer.readUInt8(0);
-					cmdNum = response.buffer.readUInt8(1);
-					// match the command number that generated this response.
-
-					debug('[pullResponse] responseType ==', responseType);
-					debug('[pullResponse] cmdNum ==', cmdNum);
-
-					cb = this.commands[cmdNum];
-
-					debug('[pullResponse] cb is', cb ? 'NOT null' : 'null');
-
-					if ( ! cb ) {
-						debug('[pullResponse] rejecting with 504');
-						rej({	status : 504,
-								error  : "Gateway Timeout",
-								reason : "Command not matched"
-							});
-						return;
+				if (0 == responseType && 255 == cmdNum) {
+					// this is actually an empty response. If a response is expected, 
+					// ask again in 100ms.
+					debug('[pullResponse] got empty response.');
+					if (expectingResponseSince + RESPONSE_TIMEOUT > Date.now()) {
+						debug('[pullResponse] expecting response. trying again in 100ms');
+						_.delay(_.bind(self.pullResponse, self), 100);
 					}
+					return;
+				}
+				expectingResponseSince == 0;
+
+				// match the command number that generated this response.
+
+				debug('[pullResponse] responseType ==', responseType);
+				debug('[pullResponse] cmdNum ==', cmdNum);
+
+				cb = this.commands[cmdNum];
+				this.commands[cmdNum] == undefined;
+
+				debug('[pullResponse] cb is', cb ? 'NOT null' : 'null');
+				debug('[pullResponse] typeof cb is', typeof cb );
+
+				if ( ! cb ) {
+					debug('[pullResponse] rejecting with 504');
+					res(responseObj(cmdNum, statusCodes.GATEWAY_TIMEOUT));
+
+				} else {
 					this.commands[cmdNum] = null;
 
 					// now let's make the correct action for the response
 					switch (responseType) {
 					case RSP_ACK:
-						cb(null);
+						debug('[pullResponse] got RSP_ACK');
+						res(responseObj(cmdNum, statusCodes.NO_CONTENT));
 						break;
 					case RSP_ERR_BAD_CMD:
+						debug('[pullResponse] got BAD_REQUEST');
+						res(responseObj(cmdNum, statusCodes.BAD_REQUEST));
+						break;
 
-
-						// TODO
-
-
-
+					case RSP_OUT_OF_RNG:
+					case RSP_NEGV_RNG:
+						debug('[pullResponse] got RSP_OUT_OF_RNG');
+						res(responseObj(cmdNum, statusCodes.REQUESTED_RANGE_NOT_SATISFIABLE));
 						break;
 
 					case RSP_DUMP_RNG_8:
@@ -198,73 +240,98 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 						// TODO
 
 
+						res(response);
+
 						break;
 
 					}
 
-
-					res();
-
-
-
-
-				} else {
-					// unexpected behaviour
-					debug("[pullResponse] rejecting with 500");
-					rej({	status : 500,
-							error  : "Internal Error",
-							reason : "Device returned unexpected response"
-						});
-
-
-					// TODO create a reset command to send here.
-
 				}
+				// make sure there aren't any other responses waiting. If this call gets an empty
+				// response, there shouldn't be any subsequent calls.
+				_.delay(_.bind(self.pullResponse, self));
 
-			})})
-		.then(resolve)
-		.catch(reject);
 
+			} else {
+				// unexpected behaviour
+				debug("[pullResponse] rejecting with 500");
+				rej({	status : 500,
+						error  : "Internal Error",
+						reason : "Device returned unexpected response"
+					});
+
+
+				// TODO create a reset command to send here.
+
+			}
+
+		})})
+	.then((response) => {
+		debug("[pullResponse] calling back with response", response);
+		cb && cb(null, response);
 	})
+	.catch(reason => {
+		debug("[pullResponse] throwing for reason", reason);
+		cb && cb(reason);
+		throw reason;
+	});
 
 };
 
 I2cWS281xDriver.prototype.sendData = function(channel, slave, buffer) {
 
+	debug("[sendData] start");
+
 	return new Promise((resolve, reject) => {
 		Promise.resolve()
 		.then(() => { return new Promise((res, rej) => {
-				debug('openning channel');
+				debug('[sendData] openning channel');
 				this.bus = i2c.open(channel, (err) => {err ? rej(err) : res()});
-				debug('openned channel');
+				debug('[sendData] openned channel');
 			})})
 		.then(() => { return new Promise((res, rej) => {
 			this.bus.scan((err, devices) => {
 				if (err) {
-					debug("Error scanning bus:", err);
+					debug("[sendData] Error scanning bus:", err);
 					rej(err);
 				} else {
-					debug("Scanned devices:", devices);
+					debug("[sendData] Scanned devices:", devices);
 					res();
 				}
 			})
 		})})
 		.then(() => { return new Promise((res, rej) => {
-				debug(`buf.i2cWrite(${slave}, ${buffer.length}, ${JSON.stringify(buffer.toJSON().data)}, cb)`)
+				debug(`[sendData] buf.i2cWrite(${slave}, ${buffer.length}, ${JSON.stringify(buffer.toJSON().data)}, cb)`)
 				this.bus.i2cWrite(slave, buffer.length, buffer, (err) => {err ? rej(err) : res()});
-				debug('write ok');
+				debug('[sendData] write ok');
 			})})
 		.then(() => { return new Promise((res, rej) => {
-				debug('closing');
+				debug('[sendData] closing');
 				this.bus.close((err) => {err ? rej(err) : res()});
-				debug('closed');
+				debug('[sendData] closed');
 			})})
 		.then(resolve)
-		.catch(reason => { debug(reason) ; reject(reason); })
+		.catch(reason => { debug(`[sendData] rejected: ${reason}`) ; reject(reason); })
 	})
 };
 
-I2cWS281xDriver.prototype.sendCommand = function(code, cb, buffer) {
+
+/**
+ *	@method sendCommand
+ *	Sends a command to the i2c device. This method takes a callback and returns
+ *	a promise -- these have two different functions. The callback is the result
+ *	of the command, and the promise is the result of *sending* the command.
+ *	@param {Number} code - the 8-bit command code to send
+ *	@param {Buffer|String} [buffer] - a buffer that includes the data to send
+ *		with the command. Not required for all commands.
+ *	@param {Function} [cb] - the callback to call when the adapter responds
+ *		to the command.
+ *	@return {Promise} promise that resolves when the command is sent to the i2c
+ *		device.
+ */
+I2cWS281xDriver.prototype.sendCommand = function(code, buffer, cb) {
+
+	debug("[sendCommand] called on code:", '0x'+code.toString(16));
 
 	var self = this;
 
@@ -274,64 +341,66 @@ I2cWS281xDriver.prototype.sendCommand = function(code, cb, buffer) {
 		// I can reuse the code.
 		var counter = self.commandCounter++;
 
+		if (_.isFunction(buffer)) {
+			if (_.isNil(cb)) {
+				cb = buffer;
+				buffer = undefined;
+			} else {
+				reject("Internal error 321: Too many callbacks");
+			}
+		}
+
 		self.commandCounter%=0xFF;
 
 		if (self.commands[counter]) {
-			cb( {	status : 504,
+			self.commands[counter]( 
+				{	status : 504,
 					error  : "Gateway Timeout",
 					reason : "Device did not respond. Reallocating command code."
 				});
 		}
 		self.commands[counter] = cb;
-		if ( null == buffer ) {
+		if ( _.isNil(buffer) ) {
 			buffer = Buffer.allocUnsafe(2);
 			buffer.writeUInt8(code, 0);
 			buffer.writeUInt8(counter, 1);
 		} else {
-
-
-			// TODO -- add the code and counter to the buffer
-
-
-
+			var newBuffer = Buffer.allocUnsafe(buffer.length+2);
+			newBuffer.writeUInt8(code, 0);
+			newBuffer.writeUInt8(counter, 1);
+			buffer.copy(newBuffer, 2);
+			buffer = newBuffer;
 		}
 
 		self.sendData(1, SLAVE_ADDR, buffer)
-		.then((buffer) => {
-
-				// we sent the command, now poll for the response
-				// if ( ! self.responsePollInterval) {
-
-					process.nextTick(_.bind(self.pullResponse, self));
-
-				// 	self.responsePollInterval = setInterval(
-				// 		_.bind(() => {
-				// 				if (Date.now() > this.lastCommandTime + RESPONSE_TIMEOUT) {
-				// 					clearInterval(this.responsePollInterval);
-				// 					this.responsePollInterval = null;
-				// 				}
-				// 				this.pullResponse;
-				// 			}, self), 
-				// 		RESPONSE_POLL);
-				// }
-				// this.responsePollInterval = Date.now();
-
-				return buffer;
-			})
-		.then(resolve)
-		.catch((reason) => {
-			self.commands[counter](reason);
-			self.commands[counter] = null;
+		.then(buffer =>{ expectingResponseSince = Date.now(); _.bind(self.pullResponse, self)(); })
+		.catch(reason => {
+			debug("[sendCommand] REJECTING with reason ==", reason);
 			reject(reason);
 		});
 	});
 };
 
-I2cWS281xDriver.prototype.syn = function() { 
+I2cWS281xDriver.prototype.syn = function syn() { 
 	var self = this;
 	return new Promise((resolve, reject) => {
-		self.sendCommand(CMD_SYN, emptyCallback(resolve, reject), null);
-	})
+		self.sendCommand(CMD_SYN, emptyCallback(resolve, reject));
+	});
+};
+
+I2cWS281xDriver.prototype.setPixelCount = function setPixelCount(newPixelCount) {
+	var self = this;
+	return new Promise((resolve, reject) => {
+		var buffer, code, cb;
+		if (newPixelCount <= 0x7f) {
+			buffer = Buffer.allocUnsafe(1);
+			buffer.writeUInt8(newPixelCount);
+		} else {
+			buffer = Buffer.allocUnsafe(2);
+			buffer.writeUInt16BE(newPixelCount|0x8000);
+		}
+		self.sendCommand(CMD_SETPIXEL_CT, buffer, emptyCallback(resolve, reject))
+	});
 };
 
 module.exports = I2cWS281xDriver;
