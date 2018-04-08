@@ -5,9 +5,19 @@ Pi doesn't play nicely with Neopixels -- you don't have fine control over the ti
 
 The goal is to make this adapter run on an ATTiny45 and control as many LEDs as possible.
 
+Please note that this isn't even Alpha yet. Many features are not yet implemented, and some things still need optimization.
+
 ## Challenges
 
-The limiting factor on the number of LEDs I can control is the memory onboard. Each LED requires 3 bytes of RAM, and the chip only has 256 bytes to work with, and I still need room for the program to run. To maximize memory efficiency, I may need to code the LED signalling by hand.
+While right now it runs on a standard Arduino Uno, the real goal is to run it on a bare ATtiny45. The limiting factor on the number of LEDs I can control is the memory onboard. Each LED requires 3 bytes of RAM, and the chip only has 256 bytes to work with, and I still need room for the program to run. To maximize memory efficiency, I may need to code the LED signalling by hand.
+
+# Connecting
+
+Right now it runs on an Arduino Uno or compatible. 
+
+Connect the i2c.1 device on the Pi to the i2c on the Arduino, that's Pi Pin 3 to Arduino pin 27 (SDA) and Pi Pin 5 to Arduino pin 28 (SCL). The Arduino will also need power its power and ground connected to the Pi's to ensure the levels are the same. The easiest way to do that is to connect the USB, but this can be accomplished using the appropriate GPIO pins as well.
+
+Connect power and ground from the Arduino to the power and ground pins on the NeoPixel LED, and pin 6 on the Arduino to the `Data IN` pin on the LED. The pins on the LED are, from the flat side, Data out, Ground, +5V, and Data in.
 
 # Interface
 
