@@ -295,19 +295,19 @@ I2cWS281xDriver.prototype.sendData = function(channel, slave, buffer) {
 					res();
 				}
 			})})
+		// .then(() => { return new Promise((res, rej) => {
+		// 	self.bus.scan((err, devices) => {
+		// 		if (err) {
+		// 			debug("[sendData] Error scanning bus:", err);
+		// 			rej(err);
+		// 		} else {
+		// 			debug("[sendData] Scanned devices:", devices);
+		// 			res();
+		// 		}
+		// 	})
+		// })})
 		.then(() => { return new Promise((res, rej) => {
-			self.bus.scan((err, devices) => {
-				if (err) {
-					debug("[sendData] Error scanning bus:", err);
-					rej(err);
-				} else {
-					debug("[sendData] Scanned devices:", devices);
-					res();
-				}
-			})
-		})})
-		.then(() => { return new Promise((res, rej) => {
-				debug(`[sendData] buf.i2cWrite(${slave}, ${buffer.length}, ${JSON.stringify(buffer.toJSON().data)}, cb)`)
+				console.log(`[sendData] buf.i2cWrite(${slave}, ${buffer.length}, ${JSON.stringify(buffer.toJSON().data)}, cb)`)
 				self.bus.i2cWrite(slave, buffer.length, buffer, (err) => {err ? rej(err) : res()});
 				debug('[sendData] write ok');
 			})})
@@ -405,11 +405,7 @@ I2cWS281xDriver.prototype.setPixelCount = function setPixelCount(newPixelCount) 
 	});
 };
 
-I2cWS281xDriver.prototype.rgb = function rgb(r, g, b) {
-	return r << 16 | g << 8 | b;
-}
-
-I2cWS281xDriver.prototype.setPixelColor = function setPixelColor(pixelNum, color) {
+I2cWS281xDriver.prototype.setPixelColor = function setPixelColor(pixelNum, r, g, b) {
 	var self = this;
 	return new Promise((resolve, reject) => {
 		var buffer, code, cb, colorOffset;
@@ -422,8 +418,9 @@ I2cWS281xDriver.prototype.setPixelColor = function setPixelColor(pixelNum, color
 			buffer = Buffer.allocUnsafe(5);
 			buffer.writeUInt16BE(pixelNum|0x8000);
 		}
-		buffer.writeUInt8(color & 0x00ff0000 >> 16, colorOffset);
-		buffer.writeUInt16BE(color & 0x0000ffff, colorOffset+1);
+		buffer.writeUInt8(b, colorOffset++);
+		buffer.writeUInt8(g, colorOffset++);
+		buffer.writeUInt8(r, colorOffset++);
 		self.sendCommand(CMD_PIXEL_CLR, buffer, emptyCallback(resolve, reject))
 	});
 }
