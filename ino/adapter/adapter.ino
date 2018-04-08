@@ -1,6 +1,6 @@
 
 #include <Wire.h>
-//#include <Adafruit_NeoPixel.h>
+#include <Adafruit_NeoPixel.h>
 
 #define I2C_CHANNEL 0x0B
 
@@ -25,7 +25,10 @@
 #define RSP_DUMP_RNG_16	((uint8_t)0x7E)
 
 #define RESPONSE_QUEUE_LENGTH 0x10
-#define MAX_PIXEL_BUF 0x48
+#define MAX_PIXEL_BUF 0x280
+
+// pin for the Neopixel LED
+#define PIN 6
 
 // responseScratch -- a space to use to compose two-byte responses for use by macros.
 
@@ -48,6 +51,7 @@ nextResponse_t nextResponse = FIRST;
 uint16_t i = 0;
 uint16_t pixelCt = 1;
 
+Adafruit_NeoPixel leds = Adafruit_NeoPixel(3, PIN, NEO_GRB + NEO_KHZ800);
 
 void queueResponse(int len, uint8_t * bytes) {
 	int i;
@@ -186,6 +190,31 @@ void i2cResponder() {
 
 }
 
+/**
+ *	Reads a length input from i2c. Length can be delivered in a byte or a 
+ *	big-end word.
+ *	@param epectedBytes a pointer to an expectedBytes counter. If the length
+ *		is greater than 127, the expecterBytes counter will be incremented.
+ *	@return the length value as read from i2c, expressed as a little-end word
+ */ 
+inline uint16_t readLength(int &expectedBytes) {
+	union {
+		uint16_t u16;
+		uint8_t u8[2];
+	};
+	u8[1]=(uint8_t)Wire.read();
+	if (u8[1] & 0x80) {
+		u8[1] &= 0x7f;
+		expectedBytes++;
+		u8[0] = (uint8_t)Wire.read();
+	} else {
+		u8[0] = u8[1];
+		u8[1] = 0;
+	}
+	return u16;
+}
+
+
 void i2cCmdHandler(int numBytes) {
 
 	// this is to provide a workspace for receiving bytes
@@ -194,7 +223,8 @@ void i2cCmdHandler(int numBytes) {
 		uint16_t u16[2];
 		uint8_t u8[4];
 	};
-	int i;
+	int i;		// general-purpose counter
+	uint8_t * ptr;	// general-purpose pointer
 	int expectedCmdLength;
 
 	if(numBytes >=2 ) {
@@ -215,24 +245,15 @@ void i2cCmdHandler(int numBytes) {
 
 		case CMD_SETPIXEL_CT:
 
+			// remember this is coming in as a big-end word, but arduino is little-endian.
 			expectedCmdLength=3;
-			u8[0]=(uint8_t)Wire.read();
-			if (u8[0] | 0x80) {
-				expectedCmdLength++;
-				u16[0] = u8[0] * 0x100 + (uint8_t)Wire.read();
-			} else {
-				u16[0] = u8[0];
-			}
+			u16[0] = readLength(expectedCmdLength);
 			if (numBytes == expectedCmdLength) {
-				// number is u16[0]|0x7ffff -- converted to little-end
-				u8[2] = (uint8_t)(u16[0]|0x00ff);
-				u8[3] = (uint8_t)(u8[0]|0x7F);
-
-				if (u16[1] * pixelBytes > MAX_PIXEL_BUF) {
+				if (u16[0] * pixelBytes > MAX_PIXEL_BUF) {
 					// too long
 					rejectOutOfRange(cmdNum);
 				} else {
-					pixelCt=u16[1];
+					pixelCt=u16[0];
 					ack(cmdNum);
 				}
 			} else {
@@ -252,19 +273,12 @@ void i2cCmdHandler(int numBytes) {
 			break;
 		case CMD_PIXEL_CLR:
 
-			expectedCmdLength=3;
-			u8[0]=(uint8_t)Wire.read();
-			if (u8[0] | 0x80) {
-				expectedCmdLength++;
-				u8[1]=(uint8_t)Wire.read();
-			} else {
-				u16[0] = u8[0];
-			}
+			expectedCmdLength=6;
+			u32 = readLength(expectedCmdLength);
 			if (numBytes == expectedCmdLength) {
-				u32=u16[0]*pixelBytes;
-				if (u32 > MAX_PIXEL_BUF) {
-					rejectBadCmd(cmdNum);
-					break; // reject
+				if (u32 >= pixelCt) {
+					rejectOutOfRange(cmdNum);
+					break;
 				}
 			} else {
 				rejectBadCmd(cmdNum);
@@ -272,10 +286,11 @@ void i2cCmdHandler(int numBytes) {
 			}
 
 			// now read the pixel
-			for (i = 0; i < pixelBytes; i++) {
+			u32 *= 3;
+			for (i = 0; i < pixelBytes; i++) {				
 				pixelsBuf[u32++]=(uint8_t)Wire.read();
 			}
-			pixelsBuf[u32]=Wire.read();
+			ack(cmdNum);
 			break;
 
 		case CMD_PIXEL_RNG:
@@ -316,7 +331,28 @@ void i2cCmdHandler(int numBytes) {
 		case CMD_DUMP_RNG:
 			break;
 		case CMD_SEND:
+
+			expectedCmdLength=2;
+			if (numBytes != expectedCmdLength) {
+				rejectBadCmd(cmdNum);
+				break;
+			}
+			// TODO
+			// I don't like this but this is what gets us off the ground quickest.
+			// This copies my buffer into a separate buffer for the Neopixel, and
+			// then sends that. I want my colour store and the NeoPixel library to
+			// work of the same buffer.
+			ptr = pixelsBuf;
+			for (i = 0; i < pixelCt; i++) {
+				leds.setPixelColor(i, *(ptr++), *(ptr++), *(ptr++));
+			}
+			leds.show();
+			ack(cmdNum);
+
 			break;
+
+
+
 		default:
 			rejectBadCmd(cmdNum);
 			break;
@@ -328,10 +364,14 @@ void i2cCmdHandler(int numBytes) {
 }
 
 void setup() {
+	leds.begin();
+	leds.show();
+	leds.setPixelColor(0, 255,16,16);
+	leds.show();
+
 	Wire.begin(I2C_CHANNEL);
 	Wire.onReceive(i2cCmdHandler);
 	Wire.onRequest(i2cResponder);
-	Serial.begin(9600);
 }
 
 void loop() {

@@ -80,7 +80,76 @@ describe('basic-comms', function() {
 		});
 	});
 	it('should set a pixel count', function(done) {
-		ws.setPixelCount(1).then((response) => {
+		Promise.resolve()
+		.then(() => { return ws.setPixelCount(1); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelCount(2); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelCount(51); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelCount(81); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelCount(101); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelCount(126); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelCount(127); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelCount(128); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(done)
+		.catch(reason => done(reason));
+	});
+	it('should fail to set a pixel count if it\'s too high', function(done) {
+		ws.setPixelCount(29999).then((response) => {
 			debug("[should ack a syn] response ==", JSON.stringify(response));
 			expect(response).to.not.be.null;
 			expect(response.status.code).to.be.equal(416);
@@ -89,9 +158,37 @@ describe('basic-comms', function() {
 			done();
 		}).catch(reason => done(reason));
 	});
+	it('should set a single pixel to a colour', function(done) {
+		Promise.resolve()
+		.then(() => { return ws.setPixelCount(1); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.setPixelColor(0, ws.rgb(66,55,44)); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(() => { return ws.send(); })
+		.then((response) => {
+				debug("[should ack a syn] response ==", JSON.stringify(response));
+				expect(response).to.not.be.null;
+				expect(response.status.code).to.be.equal(204);
+				expect(response.status.series).to.be.equal('2xx Success');
+				expect(response.status.isOk).to.be.equal(true);
+			})
+		.then(done)
+		.catch(reason => done(reason));
+	});
 	it('should set all pixels to a colour');
 	it('should dump pixels');
-	it('should set a single pixel to a colour');
 	it('should dump a range of pixels');
 	it('should set a range of pixels to a colour');
 	it('should set all pixels to a buffer');

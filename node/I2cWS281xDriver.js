@@ -390,19 +390,50 @@ I2cWS281xDriver.prototype.syn = function syn() {
 };
 
 I2cWS281xDriver.prototype.setPixelCount = function setPixelCount(newPixelCount) {
+	debug('[setPixelCount] called on newPixelCount ==', newPixelCount);
 	var self = this;
 	return new Promise((resolve, reject) => {
 		var buffer, code, cb;
 		if (newPixelCount <= 0x7f) {
 			buffer = Buffer.allocUnsafe(1);
-			buffer.writeUInt8(newPixelCount);
+			buffer.writeUInt8(newPixelCount, 0);
 		} else {
 			buffer = Buffer.allocUnsafe(2);
-			buffer.writeUInt16BE(newPixelCount|0x8000);
+			buffer.writeUInt16BE(newPixelCount|0x8000, 0);
 		}
 		self.sendCommand(CMD_SETPIXEL_CT, buffer, emptyCallback(resolve, reject))
 	});
 };
+
+I2cWS281xDriver.prototype.rgb = function rgb(r, g, b) {
+	return r << 16 | g << 8 | b;
+}
+
+I2cWS281xDriver.prototype.setPixelColor = function setPixelColor(pixelNum, color) {
+	var self = this;
+	return new Promise((resolve, reject) => {
+		var buffer, code, cb, colorOffset;
+		if (pixelNum <= 0x7f) {
+			colorOffset = 1;
+			buffer = Buffer.allocUnsafe(4);
+			buffer.writeUInt8(pixelNum);
+		} else {
+			colorOffset = 2;
+			buffer = Buffer.allocUnsafe(5);
+			buffer.writeUInt16BE(pixelNum|0x8000);
+		}
+		buffer.writeUInt8(color & 0x00ff0000 >> 16, colorOffset);
+		buffer.writeUInt16BE(color & 0x0000ffff, colorOffset+1);
+		self.sendCommand(CMD_PIXEL_CLR, buffer, emptyCallback(resolve, reject))
+	});
+}
+
+I2cWS281xDriver.prototype.send = function send() {
+	var self = this;
+	return new Promise((resolve, reject) => {
+		self.sendCommand(CMD_SEND, emptyCallback(resolve, reject));
+	});
+}
 
 module.exports = I2cWS281xDriver;
 
