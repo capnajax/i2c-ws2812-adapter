@@ -90,6 +90,10 @@ var I2cWS281xDriver = function I2cWS281xDriver() {
 	 *	This interval polls for responses every `RESPONSE_POLL` milliseconds until it times out.
 	 */
 	this.responsePollInterval = null;
+
+	var self = this;
+	// process.on('SIGINT', self.close);
+	// process.on('SIGTERM', self.close);
 };
 
 
@@ -99,10 +103,33 @@ var I2cWS281xDriver = function I2cWS281xDriver() {
  *	Unlock the i2c device and, if any exist, do the next thing on the queue.
  */
 I2cWS281xDriver.prototype.unlock = function unlock() {
-	this.txLock = false;
+	var self = this;
+	self.txLock = false;
 	process.nextTick(() => {
-		this.txQueue.length && (this.txQueue.shift())();
+		if (self.txQueue.length) {
+			(self.txQueue.shift())()
+		} else {
+			// self.close();
+		}
 	});
+}
+
+/**
+ *	@method close
+ *	@private
+ *	Close a connection to the i2c device
+ */
+I2cWS281xDriver.prototype.close = function close() {
+	var self = this;
+	console.log(`[close] closing connection`);
+	if (self.bus) {
+		self.txLock = true;
+		self.bus.close(err => {
+			err && console.log(err);
+			self.bus = null;
+			self.txLock = false;
+		});
+	}
 }
 
 /**
@@ -130,7 +157,7 @@ I2cWS281xDriver.prototype.requestData = function requestData(channel, slave, len
 
 	} else {
 		// we can proceed -- there's no request waiting
-		this.txLock = true;
+		self.txLock = true;
 		return new Promise((resolve, reject) => {
 
 			Promise.resolve()
@@ -160,16 +187,11 @@ I2cWS281xDriver.prototype.requestData = function requestData(channel, slave, len
 				})})
 			.then((response) => { 
 				resolve(response); 
-				this.unlock();
+				self.unlock();
 			})
 			.catch(reason => { 
 				debug(`[requestData] rejected: ${reason}`);
-				debug(`[requestData] closing connection`)
-				self.bus.close(err => {
-					err && console.log(err);
-					self.bus = null;
-				});
- 				reject(reason); 
+				self.close();
 			})
 		});
 	}
@@ -337,7 +359,7 @@ I2cWS281xDriver.prototype.sendData = function(channel, slave, buffer) {
 
 	debug("[sendData] start");
 
-	if (this.txLock) {
+	if (self.txLock) {
 
 		return new Promise((resolve, reject) => {
 
@@ -374,7 +396,7 @@ I2cWS281xDriver.prototype.sendData = function(channel, slave, buffer) {
 			// 	})
 			// })})
 			.then(() => { return new Promise((res, rej) => {
-					console.log(`[sendData] buf.i2cWrite(${slave}, ${buffer.length}, ${JSON.stringify(buffer.toJSON().data)}, cb)`)
+					debug(`[sendData] buf.i2cWrite(${slave}, ${buffer.length}, ${JSON.stringify(buffer.toJSON().data)}, cb)`)
 					self.bus.i2cWrite(slave, buffer.length, buffer, (err) => {err ? rej(err) : res()});
 					debug('[sendData] write ok');
 				})})
@@ -384,12 +406,7 @@ I2cWS281xDriver.prototype.sendData = function(channel, slave, buffer) {
 			})
 			.catch(reason => { 
 				debug(`[sendData] rejected: ${reason}`);
-				debug(`[sendData] closing connection`)
-				self.bus.close(err => {
-					err && console.log(err);
-					self.bus = null;
-				});
- 				reject(reason); 
+				self.close();
  			});
 		})
 	}
