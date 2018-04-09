@@ -168,7 +168,7 @@ describe('basic-comms', function() {
 				expect(response.status.series).to.be.equal('2xx Success');
 				expect(response.status.isOk).to.be.equal(true);
 			})
-		.then(() => { return ws.setPixelColor(0, ws.rgb(66,55,44)); })
+		.then(() => { return ws.setPixelColor(0, 66,55,44); })
 		.then((response) => {
 				debug("[should ack a syn] response ==", JSON.stringify(response));
 				expect(response).to.not.be.null;

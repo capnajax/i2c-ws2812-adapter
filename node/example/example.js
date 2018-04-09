@@ -12,7 +12,8 @@ var ws = new (require('../I2cWS281xDriver'))(),
 		.then(() => { return new Promise((res,rej) => {
 			setTimeout(res, delay);
 		})})
-		.then(next);
+		.then(next)
+		.catch(console.log);
 	}
 
 	r1 = () => { setColor( 32,  0,  0, 500, g  )};
