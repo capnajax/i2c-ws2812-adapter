@@ -13,13 +13,13 @@ var ws = new (require('../I2cWS281xDriver'))(),
 			setTimeout(res, delay);
 		})})
 		.then(next)
-		.catch(console.log);
+		.catch(reason => { console.log(reason);});
 	}
 
-	r1 = () => { setColor( 32,  0,  0, 500, g  )};
-	g  = () => { setColor(  0, 32,  0, 500, b )};
+	r1 = () => { console.log('r1'); setColor( 32,  0,  0, 500, g  )};
+	g  = () => { console.log('g') ; setColor(  0, 32,  0, 500, b )};
 //	r2 = () => { setColor( 64,  0,  0, 500, b  )};
-	b  = () => { setColor(  0,  0, 32, 500, r1 )};
+	b  = () => { console.log('b') ; setColor(  0,  0, 32, 500, r1 )};
 
 start();
 
