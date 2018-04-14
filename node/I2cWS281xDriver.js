@@ -29,7 +29,7 @@ const
 	RSP_DUMP_RNG_16	= 0x7E,
 
 	// milliseconds to wait for a response
-	RESPONSE_TIMEOUT = 200,
+	RESPONSE_TIMEOUT = 500,
 	// frequency to poll for a response
 	RESPONSE_POLL	= 25;
 
@@ -77,7 +77,15 @@ var I2cWS281xDriver = function I2cWS281xDriver() {
 	 *	returns, or errors out. Allowing 255 comands. 256 is reserved as keeping it reserved helps
 	 * 	to ensure the data stays in sync.
 	 */
-	this.commands = new Array(0xFF); 
+//	this.commands = new Array(0xFF); 
+
+	/**
+	 *	@property
+	 *	Commands sent and awaiting a response. Array of objects with `cmdNum`, `cb`, and `time`.
+	 *	Callbacks are always called with `(err, data)` as parameters when either data returns or 
+	 *	it errors out. Command number is always a single byte between `0` and `0xF8`.
+	 */
+	this.commandsWaiting = [];
 
 	/**
 	 *	@property lastCommandTime
@@ -91,9 +99,126 @@ var I2cWS281xDriver = function I2cWS281xDriver() {
 	 */
 	this.responsePollInterval = null;
 
+	_.delay(() => {
+		this.expireInterval = setInterval(_.bind(this.expireCommands, this), 100);
+	});
+
 	var self = this;
 };
 
+
+/**
+ *	@method expireCommands.
+ *	@private
+ *	Scans the commands waiting to determine if there are any that have expired. Intended to be
+ *	run on an interval.
+ */
+I2cWS281xDriver.prototype.expireCommands = function expireCommands() {
+	var	self = this,
+		expiryTime = Date.now() - RESPONSE_TIMEOUT,
+		expiredCommands = [];
+	self.commandsWaiting.forEach(command => {
+			if (command.time < expiryTime) {
+				expiredCommands.push(command);
+			}
+		});
+	expiredCommands.forEach(command => {
+		command.cb && command.cb( 
+			{	status : 504,
+				error  : "Gateway Timeout",
+				reason : "Device did not respond. Reallocating command code."
+			});
+	});
+	self.commandsWaiting = _.difference(self.commandsWaiting, expiredCommands)
+}
+
+/**
+ *	@method allocateCommandNum
+ *	@private
+ *	Allocate a command number. Note that this allocation is short-lived -- it
+ *	has the same timeout as a waiting command, so use this command number 
+ * 	quickly.
+ *	@return a command number that is unused.
+ */
+I2cWS281xDriver.prototype.allocateCommandNum = function allocateCommandNum() {
+	var self = this,
+		cmdNum,
+		foundCmd;
+
+	// this loop usually won't iterate more than once.
+	for (cmdNum = self.commandCounter + 1; cmdNum != self.commandCounter; cmd = (cmd + 1) % 0xF8) {
+		foundCmd = _.find(self.commandsWaiting, ['cmdNum', cmdNum]);
+		if (!_.isNil(foundCmd)) {
+			// found an allocated command, maybe it was allocated already?
+			continue;
+		}
+
+		self.commandsWaiting.push({cmdNum: cmdNum, time: Date.now()});
+		self.commandCounter = cmdNum;
+		return cmdNum;
+	}
+
+	// if we get here, the queue is full
+	throw {	status : 429,
+			error  : "Too many requests",
+			reason : "Unable to allocate a command number."
+		};
+};
+
+/**
+ *	@method registerCommand
+ *	@private
+ *	register that a command is waiting.
+ *	@param {Number} cmdNum - the command number. The command number should
+ *		have been previously allocated by `allocateCommandNum`
+ *	@param {Function} cb - the callback of the command
+ */
+I2cWS281xDriver.prototype.registerCommand = function registerCommand(cmdNum, cb) {
+
+	var self = this,
+		foundCmd = _.find(self.commandsWaiting, ['cmdNum', cmdNum]);
+
+	if (_.isNil(foundCmd)) {
+		// this should not happen, commands should have been allocated first, 
+		// but it's not harmful.
+		debug('[registerCommand] WARNING: unallocated cmdNum');
+		self.commandsWaiting.push({
+				cmdNum: cmdNum,
+				time: Date.now(),
+				cb: cb
+			});
+	} else {
+		if(_.isNil(foundCmd.cb)) {
+			// allocating a command number leaves a command with no callback
+			// registered.
+			foundCmd.time = Date.now(); // reset the clock
+			foundCmd.cb = cb;
+		} else {
+			// this is bad. I just stomped on another command
+			throw { status: 500,
+					error: "Internal error",
+					reason: "Registered an already-registered command number"
+				};
+		}
+	}
+}
+
+/**
+ *	@method respondToCommand
+ *	@private
+ *	Respond to a command. If the command has already been expired, it won't
+ *	won't respond.
+ *	@param {number} cmdNum - the command number to respond to
+ *	@param {?(string|object)} err - the error
+ *	@param {?(string|object)} data - response data
+ *	@return {boolean} true if responded, false if not. 
+ */
+I2cWS281xDriver.prototype.respondToCommand = function respondToCommand(cmdNum, err, data) {
+
+	var self = this,
+		foundCmd = _.find(self.commandsWaiting, ['cmdNum', cmdNum]);
+
+}
 
 /**
  *	@method unlock
@@ -236,7 +361,7 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 			var responseObj = (cmdNum, status) => {
 					var statusInfo = statusCodes.getStatusDetails(status);
 						result = {
-						commandNum: cmdNum,
+						cmdNum: cmdNum,
 						status: {
 							code: status,
 							series: statusInfo.series,
@@ -259,6 +384,8 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 					if (expectingResponseSince + RESPONSE_TIMEOUT > Date.now()) {
 						debug('[pullResponse] expecting response. trying again in 100ms');
 						_.delay(_.bind(self.pullResponse, self), 100);
+					} else {
+						debug('[pullResponse] expecting response. Got none. NO MORE TESTS');
 					}
 					return;
 				}
@@ -269,74 +396,58 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 				debug('[pullResponse] responseType ==', responseType);
 				debug('[pullResponse] cmdNum ==', cmdNum);
 
-				cb = this.commands[cmdNum];
-				this.commands[cmdNum] == undefined;
+				// now let's make the correct action for the response
+				switch (responseType) {
+				case RSP_ACK:
+					debug('[pullResponse] got RSP_ACK');
+					res(responseObj(cmdNum, statusCodes.NO_CONTENT));
+					break;
+				case RSP_ERR_BAD_CMD:
+					debug('[pullResponse] got BAD_REQUEST');
+					res(responseObj(cmdNum, statusCodes.BAD_REQUEST));
+					break;
 
-				debug('[pullResponse] cb is', cb ? 'NOT null' : 'null');
-				debug('[pullResponse] typeof cb is', typeof cb );
+				case RSP_OUT_OF_RNG:
+				case RSP_NEGV_RNG:
+					debug('[pullResponse] got RSP_OUT_OF_RNG');
+					res(responseObj(cmdNum, statusCodes.REQUESTED_RANGE_NOT_SATISFIABLE));
+					break;
 
-				if ( ! cb ) {
-					debug('[pullResponse] rejecting with 504');
-					res(responseObj(cmdNum, statusCodes.GATEWAY_TIMEOUT));
-
-				} else {
-					this.commands[cmdNum] = null;
-
-					// now let's make the correct action for the response
-					switch (responseType) {
-					case RSP_ACK:
-						debug('[pullResponse] got RSP_ACK');
-						res(responseObj(cmdNum, statusCodes.NO_CONTENT));
-						break;
-					case RSP_ERR_BAD_CMD:
-						debug('[pullResponse] got BAD_REQUEST');
-						res(responseObj(cmdNum, statusCodes.BAD_REQUEST));
-						break;
-
-					case RSP_OUT_OF_RNG:
-					case RSP_NEGV_RNG:
-						debug('[pullResponse] got RSP_OUT_OF_RNG');
-						res(responseObj(cmdNum, statusCodes.REQUESTED_RANGE_NOT_SATISFIABLE));
-						break;
-
-					case RSP_DUMP_RNG_8:
+				case RSP_DUMP_RNG_8:
 
 
-						// TODO
+					// TODO
 
 
-						break;
+					break;
 
 
-					case RSP_DUMP_RNG_16: 
+				case RSP_DUMP_RNG_16: 
 
 
 
-						// TODO
-						break;
+					// TODO
+					break;
 
 
-					case RSP_ERR_DUMP_ALREADY_QUEUED:
+				case RSP_ERR_DUMP_ALREADY_QUEUED:
 
 
-						// TODO
+					// TODO
 
 
 
-						break;
+					break;
 
-					default:
-
-
-						// TODO
+				default:
 
 
-						res(response);
+					// TODO
 
-						break;
 
-					}
+					res(response);
 
+					break;
 				}
 				// make sure there aren't any other responses waiting. If this call gets an empty
 				// response, there shouldn't be any subsequent calls.
@@ -360,11 +471,11 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 		})})
 	.then((response) => {
 		debug("[pullResponse] calling back with response", response);
-		cb && cb(null, response);
+		self.respondToCommand(cmdNum, null, response);
 	})
 	.catch(reason => {
 		debug("[pullResponse] throwing for reason", reason);
-		cb && cb(reason);
+		self.respondToCommand(cmdNum, reason, null);
 		throw reason;
 	});
 
@@ -447,7 +558,8 @@ I2cWS281xDriver.prototype.sendCommand = function(code, buffer, cb) {
 
 		// If there's already a command in the queue that has this code, fail it so
 		// I can reuse the code.
-		var counter = self.commandCounter++;
+		var cmdNum = self.allocateCommandNum();
+		self.registerCommand(cmdNum, cb);
 
 		if (_.isFunction(buffer)) {
 			if (_.isNil(cb)) {
@@ -458,24 +570,14 @@ I2cWS281xDriver.prototype.sendCommand = function(code, buffer, cb) {
 			}
 		}
 
-		self.commandCounter%=0xFF;
-
-		if (self.commands[counter]) {
-			self.commands[counter]( 
-				{	status : 504,
-					error  : "Gateway Timeout",
-					reason : "Device did not respond. Reallocating command code."
-				});
-		}
-		self.commands[counter] = cb;
 		if ( _.isNil(buffer) ) {
 			buffer = Buffer.allocUnsafe(2);
 			buffer.writeUInt8(code, 0);
-			buffer.writeUInt8(counter, 1);
+			buffer.writeUInt8(cmdNum, 1);
 		} else {
 			var newBuffer = Buffer.allocUnsafe(buffer.length+2);
 			newBuffer.writeUInt8(code, 0);
-			newBuffer.writeUInt8(counter, 1);
+			newBuffer.writeUInt8(cmdNum, 1);
 			buffer.copy(newBuffer, 2);
 			buffer = newBuffer;
 		}
