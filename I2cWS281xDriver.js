@@ -156,16 +156,23 @@ I2cWS281xDriver.prototype.allocateCommandNum = function allocateCommandNum() {
 		foundCmd;
 
 	// this loop usually won't iterate more than once.
-	for (cmdNum = self.commandCounter + 1; cmdNum != self.commandCounter; cmdNum = ((cmdNum + 1) % 0xF8)) {
+	for (cmdNum = self.commandCounter + 1; cmdNum != self.commandCounter; cmdNum++) {
+
+		cmdNum %= 0xF0;
+
+		console.log("cmdNum == " + cmdNum);
+
 		foundCmd = _.find(self.commandsWaiting, ['cmdNum', cmdNum]);
 		if (!_.isNil(foundCmd)) {
 			// found an allocated command, maybe it was allocated already?
+			console.log('Already found one.');
 			continue;
 		}
 
 		self.commandsWaiting.push({cmdNum: cmdNum, time: Date.now()});
 		self.commandCounter = cmdNum;
 		return cmdNum;
+		break;
 	}
 
 	// if we get here, the queue is full
@@ -658,7 +665,7 @@ I2cWS281xDriver.prototype.setPixelCount = function setPixelCount(newPixelCount) 
 };
 
 I2cWS281xDriver.prototype.setPixelColor = function setPixelColor(pixelNum, r, g, b) {
-	debug('[setPixelColor] called on pixelNum ==', pixelNum);
+	debug('[setPixelColor] called on pixelNum ==', pixelNum, "r,g,b ==", r, g, b);
 	var self = this;
 	return new Promise((resolve, reject) => {
 		var buffer, code, cb, colorOffset;
