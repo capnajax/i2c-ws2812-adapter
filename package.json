@@ -1,8 +1,8 @@
 {
   "name": "i2c-ws2812-adapter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "An adapter to allow Neopixel control from the i2c device",
-  "main": "adapter.js",
+  "main": "I2cWS281xDriver.js",
   "scripts": {
     "test": "./node_modules/mocha/bin/mocha"
   },
