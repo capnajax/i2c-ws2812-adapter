@@ -675,9 +675,9 @@ I2cWS281xDriver.prototype.setPixelColor = function setPixelColor(pixelNum, r, g,
 			buffer = Buffer.allocUnsafe(5);
 			buffer.writeUInt16BE(pixelNum|0x8000);
 		}
-		buffer.writeUInt8(g, colorOffset++);
-		buffer.writeUInt8(r, colorOffset++);
 		buffer.writeUInt8(b, colorOffset++);
+		buffer.writeUInt8(r, colorOffset++);
+		buffer.writeUInt8(g, colorOffset++);
 		self.sendCommand(CMD_PIXEL_CLR, buffer, emptyCallback(resolve, reject))
 			.catch((reason) => { debug("FAILED WITH REASON", reason); reject(reason) });
 	});
