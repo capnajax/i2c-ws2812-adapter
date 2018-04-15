@@ -16,10 +16,9 @@ var ws = new (require('../I2cWS281xDriver'))(),
 		.catch(reason => { console.log(reason);});
 	}
 
-	r1 = () => { console.log('r1'); setColor( 32,  0,  0, 500, g  )};
-	g  = () => { console.log('g') ; setColor(  0, 32,  0, 500, b )};
-//	r2 = () => { setColor( 64,  0,  0, 500, b  )};
-	b  = () => { console.log('b') ; setColor(  0,  0, 32, 500, r1 )};
+	r = () => { console.log('r') ; setColor( 32,  0,  0, 500, g )};
+	g = () => { console.log('g') ; setColor(  0, 32,  0, 500, b )};
+	b = () => { console.log('b') ; setColor(  0,  0, 32, 500, r )};
 
 start();
 
