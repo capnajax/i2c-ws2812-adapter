@@ -1,6 +1,8 @@
 
 const
 	debug = require('debug')('I2cWS281xDriver'),
+	debugResponse = require('debug')('I2cWS281xDriver:response')
+	debugCallbacks = require('debug')('I2cWS281xDriver:callbackMgmt')
 	i2c = require('i2c-bus'),
 	statusCodes = require('web-status-codes'),
 	_ = require('lodash'),
@@ -99,10 +101,6 @@ var I2cWS281xDriver = function I2cWS281xDriver() {
 	 */
 	this.responsePollInterval = null;
 
-	_.delay(() => {
-		this.expireInterval = setInterval(_.bind(this.expireCommands, this), 100);
-	});
-
 	var self = this;
 };
 
@@ -114,6 +112,9 @@ var I2cWS281xDriver = function I2cWS281xDriver() {
  *	run on an interval.
  */
 I2cWS281xDriver.prototype.expireCommands = function expireCommands() {
+
+	debugCallbacks('[expireCommands] called.');
+
 	var	self = this,
 		expiryTime = Date.now() - RESPONSE_TIMEOUT,
 		expiredCommands = [];
@@ -123,13 +124,19 @@ I2cWS281xDriver.prototype.expireCommands = function expireCommands() {
 			}
 		});
 	expiredCommands.forEach(command => {
+		debugCallbacks("[expireCommands] expiring command:", command);
 		command.cb && command.cb( 
 			{	status : 504,
 				error  : "Gateway Timeout",
 				reason : "Device did not respond. Reallocating command code."
 			});
 	});
-	self.commandsWaiting = _.difference(self.commandsWaiting, expiredCommands)
+	self.commandsWaiting = _.difference(self.commandsWaiting, expiredCommands);
+	if (_.isEmpty(self.commandsWaiting)) {
+		debugCallbacks('[expireCommands] command queue empty.');
+		clearInterval(this.expireInterval);
+		this.expireInterval = null;
+	}
 }
 
 /**
@@ -141,12 +148,15 @@ I2cWS281xDriver.prototype.expireCommands = function expireCommands() {
  *	@return a command number that is unused.
  */
 I2cWS281xDriver.prototype.allocateCommandNum = function allocateCommandNum() {
+
+	debugCallbacks('[allocateCommandNum] called.');
+
 	var self = this,
 		cmdNum,
 		foundCmd;
 
 	// this loop usually won't iterate more than once.
-	for (cmdNum = self.commandCounter + 1; cmdNum != self.commandCounter; cmd = (cmd + 1) % 0xF8) {
+	for (cmdNum = self.commandCounter + 1; cmdNum != self.commandCounter; cmdNum = ((cmdNum + 1) % 0xF8)) {
 		foundCmd = _.find(self.commandsWaiting, ['cmdNum', cmdNum]);
 		if (!_.isNil(foundCmd)) {
 			// found an allocated command, maybe it was allocated already?
@@ -175,13 +185,16 @@ I2cWS281xDriver.prototype.allocateCommandNum = function allocateCommandNum() {
  */
 I2cWS281xDriver.prototype.registerCommand = function registerCommand(cmdNum, cb) {
 
+	debugCallbacks('[registerCommand] called on cmdNum', cmdNum);
+	debugCallbacks('[registerCommand] typeof cb ==', typeof cb);
+
 	var self = this,
 		foundCmd = _.find(self.commandsWaiting, ['cmdNum', cmdNum]);
 
 	if (_.isNil(foundCmd)) {
 		// this should not happen, commands should have been allocated first, 
 		// but it's not harmful.
-		debug('[registerCommand] WARNING: unallocated cmdNum');
+		debugCallbacks('[registerCommand] WARNING: unallocated cmdNum');
 		self.commandsWaiting.push({
 				cmdNum: cmdNum,
 				time: Date.now(),
@@ -197,9 +210,15 @@ I2cWS281xDriver.prototype.registerCommand = function registerCommand(cmdNum, cb)
 			// this is bad. I just stomped on another command
 			throw { status: 500,
 					error: "Internal error",
-					reason: "Registered an already-registered command number"
+					reason: "Registered an already-registered command number",
+					data: {foundCmd: foundCmd}
 				};
 		}
+	}
+
+	if (_.isNil(self.expireInterval)) {
+		debugCallbacks('[registerCommand] starting expireInterval');
+		self.expireInterval = setInterval(_.bind(self.expireCommands, self), 50);
 	}
 }
 
@@ -215,8 +234,21 @@ I2cWS281xDriver.prototype.registerCommand = function registerCommand(cmdNum, cb)
  */
 I2cWS281xDriver.prototype.respondToCommand = function respondToCommand(cmdNum, err, data) {
 
+	debugCallbacks("[responseToCommand] called on cmdNum, err, data ==", cmdNum, err, data);
+
 	var self = this,
 		foundCmd = _.find(self.commandsWaiting, ['cmdNum', cmdNum]);
+
+	if (foundCmd) {
+		debugCallbacks("[respondToCommand] responding to cmdNum", cmdNum, foundCmd);
+		if (foundCmd.cb) {
+			debugCallbacks("[respondToCommand] ...", cmdNum);
+			foundCmd.cb(err, data);
+		} 
+		self.commandsWaiting = _.without(self.commandsWaiting, foundCmd);
+	} else {
+		debugCallbacks("[respondToCommand] failed to respond to cmdNum", cmdNum);
+	}
 
 }
 
@@ -311,12 +343,12 @@ I2cWS281xDriver.prototype.requestData = function requestData(length) {
 					self.open(res, rej);
 				})})
 			.then(() => { return new Promise((res, rej) => {				
-					debug(`[requestData] buf.i2cRead(${SLAVE_ADDR}, ${length}, cb)`)
+					debugResponse(`[requestData] buf.i2cRead(${SLAVE_ADDR}, ${length}, cb)`)
 					self.bus.i2cRead(SLAVE_ADDR, length, Buffer.alloc(length), (err, bytesRead, buffer) => {
 
-							debug('[requestData] err ==', err);
-							debug('[requestData] bytesRead ==', bytesRead);
-							debug('[requestData] buffer ==', buffer);
+							debugResponse('[requestData] err ==', err);
+							debugResponse('[requestData] bytesRead ==', bytesRead);
+							debugResponse('[requestData] buffer ==', buffer);
 
 							if (err) {
 								rej(err);
@@ -324,14 +356,14 @@ I2cWS281xDriver.prototype.requestData = function requestData(length) {
 								res({bytesRead: bytesRead, buffer: buffer});
 							}
 						});
-					debug('[requestData] read ok');
+					debugResponse('[requestData] read ok');
 				})})
 			.then((response) => { 
 				resolve(response); 
 				self.unlock();
 			})
 			.catch(reason => { 
-				debug(`[requestData] rejected: ${reason}`);
+				debugResponse(`[requestData] rejected: ${reason}`);
 				self.close();
 			})
 		});
@@ -345,7 +377,7 @@ I2cWS281xDriver.prototype.requestData = function requestData(length) {
  */
 I2cWS281xDriver.prototype.pullResponse = function() {
  
-	debug("[pullResponse] called");
+	debugResponse("[pullResponse] called");
 
 	var self = this,
 		cb = null,
@@ -355,8 +387,8 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 	self.requestData(2)
 	.then((response) => { return new Promise((res, rej) => {
 
-			debug('[pullResponse] bytesRead ==', response.bytesRead);
-			debug('[pullResponse] buffer ==', response.buffer);
+			debugResponse('[pullResponse] bytesRead ==', response.bytesRead);
+			debugResponse('[pullResponse] buffer ==', response.buffer);
 
 			var responseObj = (cmdNum, status) => {
 					var statusInfo = statusCodes.getStatusDetails(status);
@@ -380,12 +412,12 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 				if (0 == responseType && 255 == cmdNum) {
 					// this is actually an empty response. If a response is expected, 
 					// ask again in 100ms.
-					debug('[pullResponse] got empty response.');
+					debugResponse('[pullResponse] got empty response.');
 					if (expectingResponseSince + RESPONSE_TIMEOUT > Date.now()) {
-						debug('[pullResponse] expecting response. trying again in 100ms');
+						debugResponse('[pullResponse] expecting response. trying again in 100ms');
 						_.delay(_.bind(self.pullResponse, self), 100);
 					} else {
-						debug('[pullResponse] expecting response. Got none. NO MORE TESTS');
+						debugResponse('[pullResponse] expecting response. Got none. NO MORE TESTS');
 					}
 					return;
 				}
@@ -393,23 +425,23 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 
 				// match the command number that generated this response.
 
-				debug('[pullResponse] responseType ==', responseType);
-				debug('[pullResponse] cmdNum ==', cmdNum);
+				debugResponse('[pullResponse] responseType ==', responseType);
+				debugResponse('[pullResponse] cmdNum ==', cmdNum);
 
 				// now let's make the correct action for the response
 				switch (responseType) {
 				case RSP_ACK:
-					debug('[pullResponse] got RSP_ACK');
+					debugResponse('[pullResponse] got RSP_ACK');
 					res(responseObj(cmdNum, statusCodes.NO_CONTENT));
 					break;
 				case RSP_ERR_BAD_CMD:
-					debug('[pullResponse] got BAD_REQUEST');
+					debugResponse('[pullResponse] got BAD_REQUEST');
 					res(responseObj(cmdNum, statusCodes.BAD_REQUEST));
 					break;
 
 				case RSP_OUT_OF_RNG:
 				case RSP_NEGV_RNG:
-					debug('[pullResponse] got RSP_OUT_OF_RNG');
+					debugResponse('[pullResponse] got RSP_OUT_OF_RNG');
 					res(responseObj(cmdNum, statusCodes.REQUESTED_RANGE_NOT_SATISFIABLE));
 					break;
 
@@ -457,7 +489,7 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 
 			} else {
 				// unexpected behaviour
-				debug("[pullResponse] rejecting with 500");
+				debugResponse("[pullResponse] rejecting with 500");
 				rej({	status : 500,
 						error  : "Internal Error",
 						reason : "Device returned unexpected response"
@@ -470,11 +502,11 @@ I2cWS281xDriver.prototype.pullResponse = function() {
 
 		})})
 	.then((response) => {
-		debug("[pullResponse] calling back with response", response);
+		debugResponse("[pullResponse] calling back with response", response);
 		self.respondToCommand(cmdNum, null, response);
 	})
 	.catch(reason => {
-		debug("[pullResponse] throwing for reason", reason);
+		debugResponse("[pullResponse] throwing for reason", reason);
 		self.respondToCommand(cmdNum, reason, null);
 		throw reason;
 	});
@@ -559,7 +591,6 @@ I2cWS281xDriver.prototype.sendCommand = function(code, buffer, cb) {
 		// If there's already a command in the queue that has this code, fail it so
 		// I can reuse the code.
 		var cmdNum = self.allocateCommandNum();
-		self.registerCommand(cmdNum, cb);
 
 		if (_.isFunction(buffer)) {
 			if (_.isNil(cb)) {
@@ -569,6 +600,8 @@ I2cWS281xDriver.prototype.sendCommand = function(code, buffer, cb) {
 				reject("Internal error 321: Too many callbacks");
 			}
 		}
+
+		self.registerCommand(cmdNum, cb);
 
 		if ( _.isNil(buffer) ) {
 			buffer = Buffer.allocUnsafe(2);
@@ -617,8 +650,10 @@ I2cWS281xDriver.prototype.setPixelCount = function setPixelCount(newPixelCount) 
 			buffer.writeUInt16BE(newPixelCount|0x8000, 0);
 		}
 		self.sendCommand(CMD_SETPIXEL_CT, buffer, emptyCallback(resolve, reject))
-			.then((result) => {debug('OK'); resolve();})
-			.catch((reason) => {debug("FAILED WITH REASON", reason), reject(reason);});
+			.catch((reason) => {
+				// this means I failed to send the command, not the command returning failure.
+				debug("FAILED WITH REASON", reason), reject(reason);
+			});
 	});
 };
 
@@ -640,7 +675,6 @@ I2cWS281xDriver.prototype.setPixelColor = function setPixelColor(pixelNum, r, g,
 		buffer.writeUInt8(g, colorOffset++);
 		buffer.writeUInt8(r, colorOffset++);
 		self.sendCommand(CMD_PIXEL_CLR, buffer, emptyCallback(resolve, reject))
-			.then((result) => { debug('OK'); resolve();})
 			.catch((reason) => { debug("FAILED WITH REASON", reason); reject(reason) });
 	});
 }
