@@ -366,7 +366,7 @@ void i2cCmdHandler(int numBytes) {
 void setup() {
 	leds.begin();
 	leds.show();
-	leds.setPixelColor(0, 255,16,16);
+	leds.setPixelColor(0, 12,8,0);
 	leds.show();
 
 	Wire.begin(I2C_CHANNEL);
