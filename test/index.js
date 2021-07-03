@@ -2,8 +2,7 @@
 const
 	debug = require('debug')('test'),
 	expect = require('chai').expect,
-	fs = require('fs'),
-	statusCodes = require('web-status-codes');
+	fs = require('fs');
 
 var	ws; // require called later, after testing for prereqs
 
