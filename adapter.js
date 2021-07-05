@@ -1,7 +1,10 @@
-var i2c = require('i2c-bus');
+'use strict';
 
-var SLAVE_ADDR = 0x0B,
-  bus;
+import i2c from 'i2c-bus';
+
+const SLAVE_ADDR = 0x0B;
+
+var bus;
 
 (function () {
 

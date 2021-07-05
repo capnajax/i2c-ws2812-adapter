@@ -1,9 +1,12 @@
+'use strict';
+
+import I2cWS281xDriver from '../I2cWS281xDriver.js';
 
 const DELAY=125
 
-console.log('ws');
 
-var ws = new (require('../I2cWS281xDriver'))(),
+
+var ws = new I2cWS281xDriver(),
 
 	start = () => {
 

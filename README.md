@@ -33,6 +33,7 @@ The i²c interface messages, as sent to the adapter have one byte for a command 
 - [0x20 setPixelColor](#setpixelcolor) - set a single pixel
 - [0x21 setPixelRange](#setpixelrange) - set a range of pixels to a single colour
 - [0x22 setPixelBuf](#setpixelbuf) - set a range of pixels to a buffer
+- [0x7C reset](#reset) - restart the driver
 - [0x7D dumpBuffer](#dumpbuffer)
 - [0x7E dumpRange](#dumprange)
 - [0x7F send](#send)
@@ -101,6 +102,12 @@ Sets a range of pixels to a specific color. The pixel numbers can be one or two 
 Sets a range of pixels to buffered colours.
 
 ```[0x22] [cmd] [pixel 1] [pixel n] [color 1] [color 2] ... [color n]```
+
+### reset
+
+Reset the driver
+
+```[0x7C] [cmd]```
 
 ### dumpBuffer
 

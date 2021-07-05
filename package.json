@@ -1,16 +1,16 @@
 {
   "name": "i2c-ws2812-adapter",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "An adapter to allow Neopixel control from the i2c device",
   "main": "I2cWS281xDriver.js",
   "scripts": {
     "test": "./node_modules/mocha/bin/mocha"
   },
+  "type": "module",
   "author": "Thomas D Wilkinson",
   "repository": "https://github.com/capnajax/pi-i2c-ws2812-adapter/node",
   "license": "MIT",
   "dependencies": {
-    "debug": "^4.3.1",
     "i2c-bus": "^5.2.2",
     "lodash": "^4.17.21",
     "web-status-codes": "^2.0.1"

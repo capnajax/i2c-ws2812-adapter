@@ -1,8 +1,10 @@
+'use strict';
 
-const
-	debug = require('debug')('test'),
-	expect = require('chai').expect,
-	fs = require('fs');
+import Debug from 'debug';
+import { expect } from 'chai';
+import fs from 'fs';
+
+const debug = Debug('test');
 
 var	ws; // require called later, after testing for prereqs
 
@@ -50,6 +52,11 @@ describe('prerequisites', function() {
 
 describe('basic-comms', function() {
 
+	it('should reset', function(done) {
+		ws.sendCommand(0x7C, (err, data) => {
+			expect(err).to.be.null;
+		});
+	});
 	it('should ack a syn', function(done) {
 		ws.syn().then((response) => {
 			debug("[should ack a syn] response ==", JSON.stringify(response));
