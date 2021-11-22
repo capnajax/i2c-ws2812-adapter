@@ -7,6 +7,8 @@ import i2c from 'i2c-bus';
 import _ from 'lodash';
 
 const
+  LOGGING_ENABLED = false,
+
   SLAVE_ADDR = 0x0B,  // the i²c standard really needs better terminology
   I2C_CHANNEL = 1,    // the pi has two i²c devices, 0 and 1
 
@@ -93,30 +95,32 @@ class GenericLogger {
   };
 
   log() {
-    let ar;
-    if (arguments[0] && Array.isArray(arguments[0])) {
-      ar = arguments[0];
-    } else {
-      ar = Array.prototype.slice.call(arguments);
-    }
-    let logStr = this.prefix || '';
-    for (let a of ar) {
-      if (typeof a !== 'object') {
-        a = {text: a, style: this.defaultStyle};
+    if (this.enabled) {
+      let ar;
+      if (arguments[0] && Array.isArray(arguments[0])) {
+        ar = arguments[0];
+      } else {
+        ar = Array.prototype.slice.call(arguments);
       }
-      logStr += ` ${a.style?`\x1b[${a.style}m`:''}${a.text}\x1b[0m`;
+      let logStr = this.prefix || '';
+      for (let a of ar) {
+        if (typeof a !== 'object') {
+          a = {text: a, style: this.defaultStyle};
+        }
+        logStr += ` ${a.style?`\x1b[${a.style}m`:''}${a.text}\x1b[0m`;
+      }
+      if (undefined !== this.suffix) {
+        logStr += this.suffix;
+      }
+      console.log(logStr);
     }
-    if (undefined !== this.suffix) {
-      logStr += this.suffix;
-    }
-    console.log(logStr);
   }
 }
 
 class I2CLogger extends GenericLogger {
 
-  constructor() {
-    super(' \x1b[90;107m𝕀²ℂ\x1b[0m', '94');
+  constructor(enabled = true) {
+    super(' \x1b[90;107m𝕀²ℂ\x1b[0m', '94', enabled);
   };
 
   close() {
@@ -173,12 +177,12 @@ class I2CLogger extends GenericLogger {
     this.log(message);
   }
 }
-const i2cLog = new I2CLogger()
+const i2cLog = new I2CLogger(LOGGING_ENABLED)
 
 class CommandLogger extends GenericLogger {
 
-  constructor(command, cmdNum) {
-    super(' \x1b[102;40mCMD\x1b[0m', '96');
+  constructor(command, cmdNum, enabled = true) {
+    super(' \x1b[102;40mCMD\x1b[0m', '96', enabled);
     this.command = command;
     this.cmdNum = cmdNum;
   };
@@ -257,7 +261,7 @@ class I2cCommand extends EventEmitter {
     this.setParam(1, this.command);
     this.setParam(1, this.cmdNum);
 
-    this.cmdLog = new CommandLogger(command, cmdNum);
+    this.cmdLog = new CommandLogger(command, cmdNum, LOGGING_ENABLED);
 
     let self = this;
 
