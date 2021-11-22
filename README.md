@@ -17,26 +17,27 @@ Right now it runs on an Arduino Uno or compatible.
 
 Connect the i2c.1 device on the Pi to the i2c on the Arduino, that's Pi Pin 3 to Arduino pin 27 (SDA) and Pi Pin 5 to Arduino pin 28 (SCL). The Arduino will also need power its power and ground connected to the Pi's to ensure the levels are the same. The easiest way to do that is to connect the USB, but this can be accomplished using the appropriate GPIO pins as well.
 
-Connect power and ground from the Arduino to the power and ground pins on the NeoPixel LED, and pin 6 on the Arduino to the `Data IN` pin on the LED. The pins on the LED are, from the flat side, Data out, Ground, +5V, and Data in.
+Connect power and ground from the Arduino to the power and ground pins on the NeoPixel LED, and pin 6 (if this pin is not avaialable, select another with the `0x03 setPin` command) on the Arduino to the `Data IN` pin on the LED. The pins on the LED are, from the flat side, Data out, Ground, +5V, and Data in.
 
 # Interface
 
-The i²c interface messages, as sent to the adapter have one byte for a command number, which cycles every 256 commands, next for a command type, then the rest of the bytes are for parameters. The names provided are for information only.
+The i²c interface messages, as sent to the adapter have one byte for a command number, which cycles every 256 commands, next for a command type, then the rest of the bytes are for parameters. The names provided are for information only; the important part is the number.
 
 ## Commands
 
-- [0x01 syn](#syn)
-- [0x02 setPixelCt](#setpixelct)
-- [0x10 flash](#flash)
-- [0x11 flashRegion](#flashregion)
-- [0x1F resume](#resume)
-- [0x20 setPixelColor](#setpixelcolor) - set a single pixel
-- [0x21 setPixelRange](#setpixelrange) - set a range of pixels to a single colour
-- [0x22 setPixelBuf](#setpixelbuf) - set a range of pixels to a buffer
-- [0x7C reset](#reset) - restart the driver
-- [0x7D dumpBuffer](#dumpbuffer)
-- [0x7E dumpRange](#dumprange)
-- [0x7F send](#send)
+- [0x01 syn](#0x01-syn)
+- [0x02 setPixelCt](#0x02-setpixelct)
+- [0x03 setPin](#0x03-setpin)
+- [0x10 flash](#0x10-flash)
+- [0x11 flashRegion](#0x11-flashregion)
+- [0x1F resume](#0x1f-resume)
+- [0x20 setPixelColor](#0x20-setpixelcolor) - set a single pixel
+- [0x21 setPixelRange](#0x21-setpixelrange) - set a range of pixels to a single colour
+- [0x22 setPixelBuf](#0x22-setpixelbuf) - set a range of pixels to a buffer
+- [0x7C reset](#0x7c-reset) - restart the driver
+- [0x7D dumpBuffer](#0x7d-dumpbuffer) - *not implemented yet*
+- [0x7E dumpRange](#0x7e-dumprange) - *not implemented yet*
+- [0x7F send](#0x7f-send)
 
 ## Requests
 
@@ -44,21 +45,26 @@ The i²c master has to request data from the adapter. Every request starts with 
 
 The first two-byte response is always a code followed by a command number. The command number is the same as the command that this response is responding to.
 
+All numbers are in big-end words.
+
 ### Initial two-byte response:
 
 - [0x00 empty](#empty)
 - [0x01 ack](#ack)
+- [0x30 errBadState](#errbadstate)
 - [0x31 errBadCommand](#errbadcommand)
-- [0x41 errDumpInProgress](#errdumpinprogress)
-- [0x7D,0x7E bufferDump](#bufferdump)
+- [0x32 errOutOfRange](#erroutofrange)
+- [0x33 errOutOfRange](#errnegativerange)
+- [0x40 errInternalError](#errinternalerror)
+- [0x42 errOverflow](#erroverflow)
 
 ## Command Details
 
-### syn
+### `0x01 syn`
 
 Essentially a ping -- requests an ACK. No parameters. The adapter will send a response back to the i²c master with 0x02 and the command number.
 
-### setPixelCt
+### `0x02 setPixelCt`
 
 Sets the number of pixels. The parameters are one or two bytes, depending on the pixel count `n`:
 
@@ -67,61 +73,69 @@ Sets the number of pixels. The parameters are one or two bytes, depending on the
 | `n` ≤ 127 | 1 | Sole byte is the number of pixels |
 | 128 ≤ `n` ≤ 21845 | 2 | Add `0x8000` to the number of pixels (i.e. set the first bit to 1) | 
 
+```[0x02] [(1)cmd] [(1-2)pixelCt]```
+
 The code provides an address space for up to 21845 RGB LEDs or 16384 RGBW LEDs. The memory limits of the chip will, of course be lower. If there are too many for the chip to handle (limits TBD), it will return an error that includes the limit expressed as a big-end word.
 
 	```0x81 [cmd] [max MSB] [max LSB]```
 
-### flash
+### `0x03 setPin`
+
+Sets the pin used for the pixels. Accepts one byte, which is the pin number. Does not validate pin number.
+
+```[0x03] [(1)cmd] [(1)pin]```
+
+### `0x10 flash`
 
 Cause all the pixels to set to the same colour without losing the buffer. Can restore the buffer with a `resume`, and `flashRegion` will set pixels not in that region back to their original buffered colour.
 
-### flashRegion
+```[0x10] [(1)cmd] [(3)color]```
+
+### `0x11 flashRegion`
 
 Future feature, uncertain feasibility.
 
 Cause a portion of the LEDs to flash a certain colour. Resets to original colour on `resume` or  another `flash`.
 
-### resume
+```[0x11] [(1)cmd] [(1-2)pixel_start] [(1-2)pixel_end] [(3)color]```
 
-Returns all pixels to their buffered colour. No parameters necessary.
+### `0x1F resume`
 
-### setPixelColor
+Returns all pixels to their buffered colour. This is used afer a `0x1F flash` command. No parameters necessary.
 
-Sets a single pixel to a specific colour. The pixel number can be one (for < 128) or two (set first bit to 1) bytes. 
+```[0x1F] [(1)cmd]```
 
-```[0x20] [cmd] [pixel] [color]```
+### `0x20 setPixelColor`
 
-### setPixelRange
+Sets a single pixel in the pixel buffer to a specific colour. The pixel number can be one (for < 128) or two (set first bit to 1) bytes. This only sets the pixel in the buffer. Use the `send` command (0x7f) to send the new colour to the led.
+
+```[0x20] [(1)cmd] [(1-2)pixel] [(3)color]```
+
+### `0x21 setPixelRange`
 
 Sets a range of pixels to a specific color. The pixel numbers can be one or two bytes.
 
-```[0x21] [cmd] [pixel 1] [pixel n] [color]```
+```[0x21] [(1)cmd] [(1-2)pixel_start] [(1-2)pixel_end] [(3)color]```
 
-### setPixelBuf
+### `0x22 setPixelBuf`
 
 Sets a range of pixels to buffered colours.
 
-```[0x22] [cmd] [pixel 1] [pixel n] [color 1] [color 2] ... [color n]```
+```[0x22] [cmd] [(1-2)pixel_start] [(1-2)pixel_end] [(3)color 1] [(3)color 2] ... [(3)color n]```
 
-### reset
+### `0x7c reset`
 
 Reset the driver
 
-```[0x7C] [cmd]```
+```[0x7c] [(1)cmd]```
 
-### dumpBuffer
-
-Sends the pixels buffer back through the i²c bus.
-
-### dumpRange
-
-Sends the pixels buffer back through the i²c bus.
-
-### send
+### `0x7f send`
 
 Sends the buffer to the pixels. This is a blocking operation and i²c commands will be lost during this process. This sends an ACK back when the `send` is complete.
 
 ## Request Response details
+
+All responses will start with the buffer size (one byte) and the number of bytes in the buffer needed to carry the reponse (one byte). So the messages start at third byte. There may be multiple messages in a single response, or none at all.
 
 ### empty
 
@@ -133,51 +147,28 @@ This indicates that there is nothing to send.
 
 This responds with 0x01 as the first byte, and a command number as the second byte. No follow-on response is necessary.
 
+### errBadState
+
 ### errBadCommand
 
 This responds with 0x41 as the first byte, and a command number as the second byte. No follow-on response is necessary.
 
 This indicates a command was sent that this device does not understand. Note that bad commands are not guaranteed a response.
 
-### errDumpInProgress
+### errOutOfRange
 
-This responds with 0x41 as the first byte, and a command number as the second byte. No follow-on response is necessary.
+### errNegativeRange
 
-This adapter can only queue one dump at a time. Note the master wouldn't receive this response until the previous dump is complete, so when the master received this response, they can requeue the dump.
+### errInternalError
 
-### bufferDump
+### errOverflow
 
-This responds with 0x7D or 0x7E. The next request gets the size of the dump -- 0x7D means only one byte is needed to express the size of the memory dump (in bytes, not pixels), and 0x7E means two bytes are necessary. i.e. if the dump is 255 bytes or less, use 0x7D, and if it's more, use 0x7E.
+The output queue has overflowed and cannot provide a correct response.
 
-The first follow-on request is for the buffer size.
+## Node Library
 
-Subsequent follow-on requets are for the buffer, 16 bytes at a time, until the dump is exhausted.
 
-For example, if the buffer has the following values in it:
-	
-	0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0a 0x0b 0x0c 0x0d 0x0e 0x0f
-	0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1a 0x1b 0x1c 0x1d 0x1e 0x1f
-	0x20 0x21 0x22 0x23 0x24 0x25 0x26 0x27 0x28 0x29 0x2a 0x2b 0x2c 0x2d 0x2e 0x2f
-	0x30 0x31 0x32 0x33 0x34 0x35 0x36 0x37 0x38 0x39 0x3a 0x3b 0x3c 0x3d 0x3e 0x3f
-	0x40 0x41 0x42 0x43 0x44 0x45 0x46 0x47 0x48 0x49 0x4a 0x4b 0x4c 0x4d 0x4e 0x4f
-	0x50 0x51 0x52 0x53 0x54 0x55 0x56 0x57 0x58 0x59 0x5a 0x5b 0x5c 0x5d 0x5e 0x5f
 
-And we're requesting pixels 6-22 (zero-indexed, inclusive) RGB pixel (ie 18th-68th byte, zero-indexed, inclusive), this would be the command sequence:
-
-	Command  : 0x7E 0x01 0x05 0x0B // end after the last pixel
-	// Request two-byte response
-	Response : 0x7D 0x01
-	// the 0x7D means I need one byte to express the dump size. Request one more byte
-	Response : 0x33 // I'm going to send 51 bytes back
-	// Now we're openning a channel for 18 bytes, starting from byte 5*3
-	// first request is for the first 16 bytes
-	Response : 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1a 0x1b 0x1c 0x1d 0x1e 0x1f 0x20 0x21 
-	// request another 16 bytes of the 35 left
-	Response : 0x22 0x23 0x24 0x25 0x26 0x27 0x28 0x29 0x2a 0x2b 0x2c 0x2d 0x2e 0x2f 0x30 0x31
-	// request another 16 bytes of the 19 left
-	Response : 0x32 0x33 0x34 0x35 0x36 0x37 0x38 0x39 0x3a 0x3b 0x3c 0x3d 0x3e 0x3f 0x40 0x41
-	// only three bytes left. request them.
-	Response : 0x42 0x43 0x44
 
 # Links
 

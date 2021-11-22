@@ -1,17 +1,11 @@
 'use strict';
 
-import Debug from 'debug';
 import { expect } from 'chai';
 import fs from 'fs';
+import { it } from 'mocha';
+import I2cWS281xDriver from '../I2cWS281xDriver.js';
 
-const debug = Debug('test');
-
-var	ws; // require called later, after testing for prereqs
-
-console.log();
-console.log();
-console.log('-----------');
-console.log();
+let ws;
 
 describe('prerequisites', function() {
 
@@ -43,8 +37,8 @@ describe('prerequisites', function() {
 
 	after(next => {
 		if (found_i2c) {
-			//I2cWS281xDriver = require('../I2cWS281xDriver');
-			ws = new (require('../I2cWS281xDriver'))();
+			// assumes pin 6
+			ws = new I2cWS281xDriver();
 		}
 		next();
 	});
@@ -52,156 +46,132 @@ describe('prerequisites', function() {
 
 describe('basic-comms', function() {
 
-	it('should reset', function(done) {
-		ws.sendCommand(0x7C, (err, data) => {
-			expect(err).to.be.null;
-		});
+	it('should start device', function(done) {
+		ws.open()
+			.then(done)
+			.catch(reason => { done({reason});});
 	});
 	it('should ack a syn', function(done) {
-		ws.syn().then((response) => {
-			debug("[should ack a syn] response ==", JSON.stringify(response));
-			expect(response).to.not.be.null;
-			expect(response.status.code).to.be.equal(204);
-			expect(response.status.series).to.be.equal('2xx Success');
-			expect(response.status.isOk).to.be.equal(true);
-			done();
-		}).catch(reason => done(reason));
+		ws.syn()
+			.then(done)
+			.catch(reason => { done({reason});});
 	});
 	it('should reject a bad command', function(done) {
-		ws.sendCommand(0x0D, (err, data) => {
-			expect(err).to.be.null;
-			debug("[should reject a bad command] data ==", JSON.stringify(data));
-			expect(data).to.not.be.null;
-			expect(data.status.code).to.be.equal(400);
-			expect(data.status.series).to.be.equal('4xx Client Error');
-			expect(data.status.isOk).to.be.equal(false);
-			debug("[should reject a bad command] got to the end");
-			done();
-		})
-		.then(()=>{
-			// command was successful, let's wait for the results now.
-		})
-		.catch(err => {
-			done(err);
-		});
+		ws.rawCmd(0x09)
+			.then(() => {
+				done('Failed to fail on bad command');
+			})
+			.catch(reason => { 
+				if (reason.err == 'BAD_COMMAND') {
+					done();
+				} else {
+					done({reason, message: 'failed with wrong failure message'});
+				}
+			});
 	});
 	it('should set a pixel count', function(done) {
+		let events = ['starting'];
 		Promise.resolve()
-		.then(() => { return ws.setPixelCount(1); })
-		.then((response) => {
-				debug("[should set a pixel count 1] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
+			.then(() => {
+				events.push('setting pixel ct to 0x10');
+				let p = ws.setPixelCount(0x10);
+				events.push('set pixel ct to 0x10');
+				return p;
 			})
-		.then(() => { return ws.setPixelCount(2); })
-		.then((response) => {
-				debug("[should set a pixel count 2] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
+			.then(() => {
+				events.push('setting pixel ct to 0x80');
+				let p = ws.setPixelCount(0x80);
+				events.push('set pixel ct to 0x80');
+				return p;
 			})
-		.then(() => { return ws.setPixelCount(51); })
-		.then((response) => {
-				debug("[should set a pixel count 3] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
+			.then(() => {
+				events.push('done');
+				done();
 			})
-		.then(() => { return ws.setPixelCount(81); })
-		.then((response) => {
-				debug("[should set a pixel count 4] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
-			})
-		.then(() => { return ws.setPixelCount(101); })
-		.then((response) => {
-				debug("[should set a pixel count 5] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
-			})
-		.then(() => { return ws.setPixelCount(126); })
-		.then((response) => {
-				debug("[should set a pixel count 6] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
-			})
-		.then(() => { return ws.setPixelCount(127); })
-		.then((response) => {
-				debug("[should set a pixel count 7] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
-			})
-		.then(() => { return ws.setPixelCount(128); })
-		.then((response) => {
-				debug("[should set a pixel count 8] response ==", JSON.stringify(response));
-				expect(response).to.not.be.undefined;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
-			})
-		.then(done)
-		.catch(reason => done(reason));
+			.catch(reason => {
+				done({reason, events});
+			});
 	});
 	it('should fail to set a pixel count if it\'s too high', function(done) {
-		ws.setPixelCount(29999).then((response) => {
-			debug("[should fail to set a pixel count if it\'s too high] response ==", JSON.stringify(response));
-			expect(response).to.not.be.null;
-			expect(response.status.code).to.be.equal(416);
-			expect(response.status.series).to.be.equal('4xx Client Error');
-			expect(response.status.isOk).to.be.equal(false);
-			done();
-		}).catch(reason => done(reason));
+		Promise.resolve()
+			.then(() => {
+				return ws.setPixelCount(0xe0);
+			})
+			.then(() => {
+				done('Failed to fail on pixel count out of range');
+			})
+			.catch(reason => {
+				if (reason.err == 'OUT_OF_RANGE') {
+					done();
+				} else {
+					done({reason, message: 'failed with wrong failure message'});
+				}
+			});
 	});
 	it('should set a single pixel to a colour', function(done) {
 		Promise.resolve()
-		.then(() => { return ws.setPixelCount(1); })
-		.then((response) => {
-				debug("[should fail to set a pixel count if it\'s too high] response ==", JSON.stringify(response));
-				expect(response).to.not.be.null;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
+			.then(() => {
+				return ws.setPixelCount(0x10);
 			})
-		.then(() => { return ws.setPixelColor(0, 66,55,44); })
-		.then((response) => {
-				debug("[should fail to set a pixel count if it\'s too high] response ==", JSON.stringify(response));
-				expect(response).to.not.be.null;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
+			.then(() => {
+				return ws.setPixelColor(0, {r:0x10,g:0x01,b:0x01});
 			})
-		.then(() => { return ws.send(); })
-		.then((response) => {
-				debug("[should fail to set a pixel count if it\'s too high] response ==", JSON.stringify(response));
-				expect(response).to.not.be.null;
-				expect(response.status.code).to.be.equal(204);
-				expect(response.status.series).to.be.equal('2xx Success');
-				expect(response.status.isOk).to.be.equal(true);
+			.then(() => {
+				return ws.send();
 			})
-		.then(done)
-		.catch(reason => done(reason));
+			.then(() => { done(); })
+			.catch(reason => {
+				done({reason});
+			});
 	});
-	it('should set all pixels to a colour');
+	it('should set all pixels to a colour (flash)', function(done) {
+		Promise.resolve()
+			.then(() => {
+				return ws.flash({r:0x20,g:0x20,b:0x02});
+			})
+			.then(() => { done(); })
+			.catch(reason => {
+				done({reason});
+			});
+	});
+	it('should return colors to buffer (resume)', function(done) {
+		Promise.resolve()
+			.then(() => {
+				return ws.resume();
+			})
+			.then(() => { done(); })
+			.catch(reason => {
+				done({reason});
+			});
+	});
 	it('should dump pixels');
 	it('should dump a range of pixels');
-	it('should set a range of pixels to a colour');
-	it('should set all pixels to a buffer');
-	it('should set a range of pixels to a buffer');
-	it('should refuse to set a range of pixels > pixelCount');
-	it('should refuse to set a range of pixels that ends before it starts');
+	it('should set a range of pixels to a colour (flash region)');
 
+	it('should set a range of pixels to a buffer', function(done) {
+		Promise.resolve()
+			.then(() => {
+				return ws.setPixelBuf(
+					0,
+					[ { r:1, g:2, b:3 },
+						{ r:4, g:5, b:6 },
+						{ r:7, g:8, b:9 },
+						{ r:1, g:2, b:3 },
+						{ r:4, g:5, b:6 },
+						{ r:7, g:8, b:9 },
+						{ r:1, g:2, b:3 },
+						{ r:4, g:5, b:6 },
+					],
+				);
+			})
+			.then(() => {
+				return ws.send();
+			})
+			.then(() => { done(); })
+			.catch(reason => {
+				done({reason});
+			});
+	});
 });
 
 
