@@ -234,7 +234,6 @@ class CommandLogger extends GenericLogger {
   }
 }
 
-
 /**
  * @class I2cCommand
  * Represents a single command sent to the I2C driver. Invoked by the driver
@@ -405,11 +404,11 @@ class I2cCommand extends EventEmitter {
    * Add a color parameter to the command. Parameters must be added in order.
    * @param {Integer|Array|Object|String} color the color. Several format are
    *  accepted.
-   * @param {String} colorSpace. Optional, but suggested. Accepted are `rgb`,
+   * @param {String} colorspace. Optional, but suggested. Accepted are `rgb`,
    *  `rgbw`, `cmyk`, 
    */
-  setColorParam(color, colorSpace) {
-    let colorConverted = this.driver.convertColor(color, colorSpace);
+  setColorParam(color, colorspace) {
+    let colorConverted = this.driver.convertColor(color, colorspace);
     this.setParam(3, [
       (colorConverted >> 16) & 0xff,
       (colorConverted >> 8) & 0xff,
@@ -572,58 +571,58 @@ class I2cWS281xDriver {
   /**
    * Convert a color to an unsigned integer as required by this driver.
    * @param {Integer|String|Array|Object} color the color to convert 
-   * @param {String} [colorSpace] the format of the color to convert. Recommended,
+   * @param {String} [colorspace] the format of the color to convert. Recommended,
    *  but if not provided, this function will guess.
    * @return {Integer} the color as an integer.
    */
-  convertColor(color, colorSpace) {
+  convertColor(color, colorspace) {
 
-    let result = null;
+    let result = undefined;
 
-    if (!colorSpace) {
+    if (!colorspace) {
       // guess the format
       if (_.isInteger(color)) {
-        colorSpace = 'rgb'; // currently only rgb pixels are supported but if we
+        colorspace = 'rgb'; // currently only rgb pixels are supported but if we
                         // add rgbw pixels later, it should be assumed rgbw when
                         // we're using rgbw, and rgb when using rgb.
       } else if (_.isObject(color)) {
         if (_.has(color, 'r') || _.has(color, 'red')) {
-          colorSpace = 'rgb';
+          colorspace = 'rgb';
         } else if (_.has(color, 'h') || _.has(color, 'hue')) {
           if (_.has(color, 'l') || _.has(color, 'lightness')) {
-            colorSpace = 'hsl';
+            colorspace = 'hsl';
           } else {
-            colorSpace = 'hsb';
+            colorspace = 'hsb';
           }
         }
       } else if (_.isArray(color)) {
         switch (color.length) {
         case 1:
-          colorSpace = 'grayscale';
+          colorspace = 'grayscale';
           break;
         case 3:
-          colorSpace = 'rgb';
+          colorspace = 'rgb';
           break;
         case 4:
           // if rgbw is supported, this should change to rgbw when using rgbw
           // pixels
-          colorSpace = 'cmyk';
+          colorspace = 'cmyk';
         default:
           // do nothing. Format underterminable.
         }
       } else if (_.isString(color)) {
         if (color.startsWith('#')) {
-          colorSpace = 'rgb';
+          colorspace = 'rgb';
         } else {
-          colorSpace = 'css';
+          colorspace = 'css';
         }
       }
     }
-    if (!colorSpace) {
+    if (!colorspace) {
       throw new Error('Undeterminable format');
     }
 
-    switch(colorSpace) {
+    switch(colorspace) {
     case COLOR_SPACE.grayscale:
       if (_.isArray(color)) {
         color = _.first(color);
@@ -632,7 +631,7 @@ class I2cWS281xDriver {
         color = Math.floor(color * 256);
       }
       if (color >= 0 && color < 256) {
-        result = color + color << 8 + color << 16;
+        result = color | (color << 8) | (color << 16);
       }
       break;
 
@@ -640,7 +639,7 @@ class I2cWS281xDriver {
       if (_.isInteger(color) && color >= 0 && color <= 0x00ffffff) {
         result = color;
       } else if (_.isArray(color) && color.length === 3) {
-        result = color[0] << 16 + color[1] < 8 + color[2];
+        result = (color[0] << 16) | (color[1] << 8) | color[2];
       } else if (_.isString(color)) {
         if (color.startsWith('#')) {
           color = color.substr(1);
@@ -731,11 +730,10 @@ class I2cWS281xDriver {
     }
 
     if (_.isArray(result)) {
-      result = result[0] << 16 | result[1] << 8 | result[2];
+      result = (result[0] << 16 )| (result[1] << 8) | result[2];
     } else if (_.isNil(result)) {
       throw new Error('Failed to parse color value');
     }
-
     return result;
   }
 
@@ -773,21 +771,21 @@ class I2cWS281xDriver {
     this.#checkOutstandingCommands();
   }
 
-  flash(color, colorSpace) {
+  flash(color, colorspace) {
     let command = this.newCommand(COMMAND.flash);
     // TODO I should handle multiple formats for colour encoding.
 
     // TODO to support RGBW, this needs to be 3 or 4
-    command.setColorParam(color, colorSpace);
+    command.setColorParam(color, colorspace);
     command.send();
     return this.awaitResponse(command);
   }
 
-  flashRegion(start, end, color, colorSpace) {
+  flashRegion(start, end, color, colorspace) {
     let command = this.newCommand(COMMAND.flashRgn);
     command.setPixelNumParam(start);
     command.setPixelNumParam(end);
-    command.setColorParam(color, colorSpace);
+    command.setColorParam(color, colorspace);
     return this.awaitResponse(command);
   }
 
@@ -1014,12 +1012,12 @@ class I2cWS281xDriver {
     return this.awaitResponse(command);
   }
 
-  setPixelBuf(offset, pixels, colorSpace) {
+  setPixelBuf(offset, pixels, colorspace) {
     let command = this.newCommand(COMMAND.setPixelBuf);
     command.setPixelNumParam(offset);
     command.setPixelNumParam(offset + pixels.length);
     for (let i of pixels) {
-      command.setColorParam(i, colorSpace)
+      command.setColorParam(i, colorspace)
     }
     command.send();
     return this.awaitResponse(command);
@@ -1038,19 +1036,19 @@ class I2cWS281xDriver {
     return this.awaitResponse(command);
   }
 
-  setPixelColor(pixel, color, colorSpace) {
+  setPixelColor(pixel, color, colorspace) {
     let command = this.newCommand(COMMAND.setPixelColor);
     command.setPixelNumParam(pixel);
-    command.setColorParam(color, colorSpace);
+    command.setColorParam(color, colorspace);
     command.send();
     return this.awaitResponse(command);
   }
 
-  setPixelRange(offset, numPixels, color, colorSpace) {
+  setPixelRange(offset, numPixels, color, colorspace) {
     let command = this.newCommand(COMMAND.setPixelRange);
     command.setPixelNumParam(offset);
     command.setPixelNumParam(offset + numPixels);
-    command.setColorParam(color, colorSpace);
+    command.setColorParam(color, colorspace);
     return this.awaitResponse(command);
   }
 

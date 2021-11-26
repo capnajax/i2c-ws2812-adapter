@@ -46,11 +46,18 @@ describe('prerequisites', function() {
 
 describe('basic-comms', function() {
 
-	it('should start device', function(done) {
+	this.ws;
+
+	this.beforeAll(function (done) {
+		ws = new I2cWS281xDriver();
 		ws.open()
-			.then(done)
-			.catch(reason => { done({reason});});
+			.then(done);
 	});
+
+	this.afterAll(function(done) {
+		ws.close().then(done());
+	});
+
 	it('should ack a syn', function(done) {
 		ws.syn()
 			.then(done)

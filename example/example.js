@@ -1,7 +1,6 @@
 'use strict';
 
 import I2cWS281xDriver from '../I2cWS281xDriver.js';
-import net from 'net';
 
 const DELAY = 125;
 
@@ -11,12 +10,14 @@ function start() {
 
 	console.log("start")
 
-	net.createServer().listen();	
-	ws.setPixelCount(1)
-		.then(r)
-		.catch(console.log);
+	ws.open()
+		.then(() => {
+			ws.setPixelCount(1)
+				.then(r)
+				.catch(console.log);	
+		})
 
-	console.log("started")
+	console.log("started");
 }
 
 function setColor(color, next) {
