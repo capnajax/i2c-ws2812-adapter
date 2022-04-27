@@ -84,6 +84,7 @@ var emptyCallback = (resolve, reject) => {
 class GenericLogger {
 
   constructor(prefix, suffix, defaultStyle) {
+
     this.prefix = prefix;
     if (undefined === defaultStyle) {
       this.defaultStyle = suffix;
@@ -92,7 +93,12 @@ class GenericLogger {
       this.suffix = suffix;
       this.defaultStyle = defaultStyle;
     }
+    this.enabled = LOGGING_ENABLED;
   };
+
+  setEnabled(enabled) {
+    this.enabled = enabled;
+  }
 
   log() {
     if (this.enabled) {
@@ -119,8 +125,9 @@ class GenericLogger {
 
 class I2CLogger extends GenericLogger {
 
-  constructor(enabled = true) {
-    super(' \x1b[90;107m𝕀²ℂ\x1b[0m', '94', enabled);
+  constructor(enabled = LOGGING_ENABLED) {
+    super(' \x1b[90;107m𝕀²ℂ\x1b[0m', '94');
+    this.setEnabled(enabled)
   };
 
   close() {
@@ -732,7 +739,7 @@ class I2cWS281xDriver {
     if (_.isArray(result)) {
       result = (result[0] << 16 )| (result[1] << 8) | result[2];
     } else if (_.isNil(result)) {
-      throw new Error('Failed to parse color value');
+      throw new Error(`Failed to parse color value ${colorspace} ${color}`);
     }
     return result;
   }
@@ -902,6 +909,8 @@ class I2cWS281xDriver {
   /**
    * @method open
    * Open the i2c connection
+   * @return {Promise} promise that resolves if openning the connection is
+   *  successful
    */
   open() { return new Promise((resolve, reject) => {
     let self = this;
@@ -949,8 +958,19 @@ class I2cWS281xDriver {
    * @param {I2cCommand} command 
    */
   push(cmdBuffer) {
+    let self = this;
     i2cLog.write(cmdBuffer.length, cmdBuffer);
-    this.bus.i2cWrite(SLAVE_ADDR, cmdBuffer.length, cmdBuffer, ()=>{});
+    return Promise.resolve()
+      .then(() => {
+        if (!self.bus) {
+          return self.open();
+        } else {
+          return Promise.resolve();
+        }
+      })
+      .then(() => {
+        return this.bus.i2cWrite(SLAVE_ADDR, cmdBuffer.length, cmdBuffer, ()=>{});
+      });
   }
 
   /**
@@ -1006,10 +1026,23 @@ class I2cWS281xDriver {
    * to the pixels
    * @returns a promise
    */
-  send() {
+  async send() {
+    let self = this;
     let command = this.newCommand(COMMAND.send);
-    command.send();
-    return this.awaitResponse(command);
+
+    let result = Promise.resolve()
+      .then(() => {
+        if (!self.bus) {
+          return self.open();
+        } else {
+          return Promise.resolve();
+        }
+      })
+      .then(() => {
+        command.send();
+        return this.awaitResponse(command);    
+      });
+    return result;
   }
 
   setPixelBuf(offset, pixels, colorspace) {
